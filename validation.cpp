@@ -55,8 +55,15 @@ int main(int argc, char **argv)
     double *answer = new double[g.n];
     assert(answer != NULL);
     /* get the right answer */
+
+    struct timespec start_ts, finish_ts;
+    clock_gettime(CLOCK_MONOTONIC, &start_ts);
     run(&g, answer);
-    
+    clock_gettime(CLOCK_MONOTONIC, &finish_ts);
+    double time = (finish_ts.tv_nsec - (double)start_ts.tv_nsec) * 1.0e-9 + (finish_ts.tv_sec - (double)start_ts.tv_sec);
+    cout.precision(5);
+    cout << "Reference time " << time << endl;
+
     FILE *f = fopen(resFilename, "r");
     assert(f != NULL);
     double *result = new double[g.n];
@@ -69,13 +76,14 @@ int main(int argc, char **argv)
     for (vertex_id_t i = 0; i < g.n; i++) {
         if (fabs(answer[i] - result[i]) > eps) {
             /* red color */
-            cout << "\033[1;31mWrong answer\033[0m\n";
+            cout.precision( 10 );
+            cout << "\033[1;31mWrong answer " << answer[i] << " " << result[i] << "\033[0m\n";
             
             delete[] answer;
             delete[] result;
             freeGraph(&g);
             
-            return 0;
+            return -1;
         }
     }
     
