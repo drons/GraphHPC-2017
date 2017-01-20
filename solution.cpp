@@ -6,83 +6,12 @@
 #include <algorithm>
 #include <omp.h>
 
-template< typename T >
-class buckets_t
-{
-public:
-    typedef	std::vector<T>                  bucket_t;
-    typedef	std::vector< bucket_t >         page_t;
-    typedef size_t                          size_type;
-    typedef typename bucket_t::size_type    bsize_type;
-    enum { PAGE_SIZE = 1024 };
-private:
-    std::deque<page_t>              m_pages;
-    size_type                       m_offset;
-    typename page_t::size_type      m_L;
-public:
-    buckets_t()
-    {
-        m_offset = 0;
-        m_L = 0;
-    }
-    ~buckets_t()
-    {
-    }
-
-    bucket_t* front()
-    {
-        while( m_pages.size() > 0 )
-        {
-            page_t& front_page = m_pages.front();
-            for( ; m_L != PAGE_SIZE; ++m_L )
-            {
-                if( !front_page[m_L].empty() )
-                    return &front_page[m_L];
-            }
-            m_pages.pop_front();
-            m_L = 0;
-            m_offset += PAGE_SIZE;
-        }
-        return NULL;
-    }
-
-    bucket_t& get_bucket( size_type N ) //buckets_on_level[ N ];
-    {
-        N -= m_offset;
-        int page_n = (int)( N/PAGE_SIZE );
-        int bucket_n = (int)( N%PAGE_SIZE );
-           std::cout << page_n << " ";
-        return m_pages[page_n][bucket_n];
-    }
-
-    void push( size_type num_of_bucket, const T& point_location )
-    {
-        num_of_bucket -= m_offset;
-        size_type   page_n = num_of_bucket/PAGE_SIZE;
-        size_type   bucket_n = num_of_bucket%PAGE_SIZE;
-        while( page_n >= m_pages.size() )
-        {
-            m_pages.emplace_back( page_t( PAGE_SIZE ) );
-        }
-        m_pages[page_n][bucket_n].push_back( point_location );
-    }
-
-    bool empty() const
-    {
-        return m_pages.empty();
-    }
-};
-
 typedef vertex_id_t DIST_TYPE;
 typedef vertex_id_t PARENT_TYPE;
 
-void dijkstra( graph_t* G, vertex_id_t start, std::vector< DIST_TYPE >& distance, std::vector<vertex_id_t>& shortest_count, std::vector<vertex_id_t>& wavefront )
+void simplified_dijkstra( graph_t* G, vertex_id_t start, std::vector< DIST_TYPE >& distance, std::vector<vertex_id_t>& shortest_count, std::vector<vertex_id_t>& wavefront )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
-
-    distance.resize( G->n );
-    shortest_count.resize( G->n );
-    wavefront.reserve( G->n );
 
     std::fill( distance.begin(), distance.end(), INVALID_DISTANCE );
     std::fill( shortest_count.begin(), shortest_count.end(), 0 );
@@ -90,64 +19,35 @@ void dijkstra( graph_t* G, vertex_id_t start, std::vector< DIST_TYPE >& distance
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
 
-    typedef typename buckets_t< vertex_id_t >::bsize_type   bucket_size_t;
-    typedef typename buckets_t< vertex_id_t >::size_type    buckets_size_t;
-    typedef typename buckets_t< vertex_id_t >::bucket_t     bucket_t;
-    buckets_t< vertex_id_t >                                queue;
+    std::deque< vertex_id_t > queue;
 
-    queue.push( 0, start );
+    queue.push_back( start );
 
     while( !queue.empty() )
     {
-        bucket_t*       bucketL = queue.front();
-        if( bucketL == NULL )
-            break;
-        vertex_id_t     current = bucketL->back();
-        DIST_TYPE       current_dist = distance[ current ];
+        vertex_id_t     v = queue.front();
+        DIST_TYPE       dist_v = distance[ v ];
+        vertex_id_t     shortest_count_v( shortest_count[v] );
 
-        wavefront.push_back( current );
-        bucketL->pop_back();
+        wavefront.push_back( v );
+        queue.pop_front();
 
-        edge_id_t       ibegin = G->rowsIndices[ current ];
-        edge_id_t       iend = G->rowsIndices[ current + 1 ];
+        edge_id_t       ibegin = G->rowsIndices[ v ];
+        edge_id_t       iend = G->rowsIndices[ v + 1 ];
 
         for( edge_id_t e = ibegin; e != iend; ++e )
         {
-            vertex_id_t next( G->endV[e] );
-            DIST_TYPE   next_distance = current_dist + 1;
-            DIST_TYPE&  d( distance[ next ] );
-            if( next_distance < d )
+            vertex_id_t w( G->endV[e] );
+            DIST_TYPE   new_dist_v = dist_v + 1;
+            DIST_TYPE&  dist_w( distance[ w ] );
+            if( dist_w == INVALID_DISTANCE )
             {
-                // Checked if node(i2,j2) is already in buckets array, it must be removed
-                // If node(i2,j2) is already in buckets array, it in array[N]
-                if( d != INVALID_DISTANCE )
-                {
-                    bucket_t&       bucketN = queue.get_bucket( d );
-                    bucket_size_t   size = bucketN.size();
-
-                    if( size != 1 )
-                    {
-                        bucket_size_t n = 0;
-                        for( bucket_size_t i = 0; i != size; i++ )
-                        {
-                            if( bucketN[i] == next )
-                                n = i;
-                        }
-                        bucketN.erase( bucketN.begin() + n );
-                    }
-                    else
-                    {
-                        bucketN.clear();
-                    }
-                }
-                d = next_distance;
-                shortest_count[ next ] = shortest_count[ current ];
-                queue.push( (buckets_size_t)next_distance, next );
+                queue.push_back( w );
+                dist_w = new_dist_v;
             }
-            else
-            if( next_distance == distance[ next ] )
+            if( dist_w == new_dist_v )
             {
-                shortest_count[ next ] += shortest_count[ current ];
+                shortest_count[w] += shortest_count_v;
             }
         }
     }
@@ -158,11 +58,9 @@ void betweenness_centrality( graph_t* G, vertex_id_t s,
                              const std::vector< DIST_TYPE >& distance,
                              const std::vector<vertex_id_t>& shortest_count,
                              const std::vector<vertex_id_t>& wavefront,
+                             std::vector<double>& delta,
                              double* result )
 {
-    std::vector<double> delta;
-
-    delta.resize( G->n );
     std::fill( delta.begin(), delta.end(), 0 );
 
     for( auto ii = wavefront.rbegin(); ii != wavefront.rend(); ++ii )
@@ -170,18 +68,22 @@ void betweenness_centrality( graph_t* G, vertex_id_t s,
         vertex_id_t w = *ii;
         edge_id_t   ibegin = G->rowsIndices[ w ];
         edge_id_t   iend = G->rowsIndices[ w + 1 ];
+        DIST_TYPE   dist_w_minus_one( distance[w] - 1 );
+        double      delta_w( delta[w] );
+        double      sc_w( ((double)shortest_count[w]) );
 
         for( edge_id_t e = ibegin; e != iend; ++e )
         {
             vertex_id_t v( G->endV[e] );
-            if( distance[w] == distance[v] + 1 )
+            if( dist_w_minus_one == distance[v] )
             {
-                delta[v] += (shortest_count[v] + shortest_count[v]*delta[w])/((double)shortest_count[w]);
+                const double sc_v( ((double)shortest_count[v]) );
+                delta[v] += (sc_v + sc_v*delta_w)/sc_w;
             }
         }
         if( w != s )
         {
-            result[w] += delta[w];
+            result[w] += delta_w;
         }
     }
 }
@@ -191,6 +93,9 @@ void run( graph_t* G, double* result )
     vertex_id_t n = G->n;
     vertex_id_t stride = 16;
 
+//    std::cout << "omp_get_num_procs   " << omp_get_num_procs() << std::endl;
+//    std::cout << "omp_get_max_threads " << omp_get_max_threads() << std::endl;
+
     #pragma omp parallel for
     for( vertex_id_t s = 0; s < n; s += stride )
     {
@@ -198,8 +103,15 @@ void run( graph_t* G, double* result )
         std::vector<vertex_id_t>    shortest_count;
         std::vector<vertex_id_t>    wavefront;
         std::vector<double>         partial_result;
+        std::vector<double>         delta;
+
+        distance.resize( G->n );
+        shortest_count.resize( G->n );
+        wavefront.reserve( G->n );
 
         partial_result.resize( G->n );
+        delta.resize( G->n );
+
         std::fill( partial_result.begin(), partial_result.end(), 0 );
 
         vertex_id_t last = s + stride;
@@ -208,8 +120,8 @@ void run( graph_t* G, double* result )
         for( vertex_id_t t = s; t < last; ++t )
         {
             wavefront.clear();
-            dijkstra( G, t, distance, shortest_count, wavefront );
-            betweenness_centrality( G, t, distance, shortest_count, wavefront, partial_result.data() );
+            simplified_dijkstra( G, t, distance, shortest_count, wavefront );
+            betweenness_centrality( G, t, distance, shortest_count, wavefront, delta, partial_result.data() );
         }
 
         #pragma omp critical
