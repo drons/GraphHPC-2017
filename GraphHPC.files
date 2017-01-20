@@ -1,0 +1,10 @@
+defs.h
+gen_RMAT.cpp
+graph_tools.cpp
+main.cpp
+README
+reference.cpp
+solution.cpp
+validation.cpp
+start.sh
+Makefile
