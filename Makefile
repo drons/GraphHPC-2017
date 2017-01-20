@@ -1,8 +1,8 @@
 # defines
 CXX=g++
 SPEEDFLAGS=-O3
-CXXFLAGS=-Wall $(SPEEDFLAGS)
-LDFLAGS=-lrt $(SPEEDFLAGS)
+CXXFLAGS=-Wall -std=c++11 -fopenmp $(SPEEDFLAGS)
+LDFLAGS=-lrt -lgomp $(SPEEDFLAGS)
 
 TARGET = validation gen_RMAT reference solution
 
