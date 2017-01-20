@@ -1,0 +1,47 @@
+******************************
+GraphHPC-2017 contest      
+******************************
+
+===============================================================================
+
+Authors
+-------
+Artem Mazeev
+Alexander Semenov
+Timur Ismagilov
+ 
+
+RMAT graph generator is adapted from snap-0.4 http://snap-graph.sourceforge.net
+
+Description of executables:
+---------------------------
+gen_RMAT                -- RMAT graph serial generator
+reference               -- reference serial implementation
+solution                -- there must be your solution
+validation              -- validation tool
+
+===============================================================================
+
+To implement your own algorithm, write code in solution.cpp
+
+To build implementations, type 'make'
+
+Brief instructions:
+-------------------
+Example of testing your implementation by hands:
+
+0. Print 'make' in your console:
+
+    $ make
+
+1. Run graph generator:
+
+    $ ./gen_RMAT -s 5
+
+2. Run your implementation:
+
+    $ ./solution -in rmat-5
+
+3. Run validation tool:
+
+    $ ./validation -in rmat-5 -res rmat-5.res
