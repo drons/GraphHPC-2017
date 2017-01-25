@@ -1,8 +1,8 @@
 #!/bin/sh
 make
-#./gen_RMAT -s 3 &&
-#./solution -in rmat-3 &&
-#./validation -in rmat-3 -res rmat-3.res &&
+./gen_RMAT -s 3 &&
+./solution -in rmat-3 &&
+./validation -in rmat-3 -res rmat-3.res &&
 
 #./gen_RMAT -s 4 &&
 #./solution -in rmat-4 &&
@@ -32,8 +32,8 @@ make
 #./solution -in rmat-10 &&
 #./validation -in rmat-10 -res rmat-10.res &&
 
-./gen_RMAT -s 11 &&
-./solution -in rmat-11 &&
+#./gen_RMAT -s 11 &&
+#./solution -in rmat-11 &&
 #./validation -in rmat-11 -res rmat-11.res &&
 
 #./gen_RMAT -s 12 &&
@@ -44,3 +44,19 @@ make
 #./solution -in rmat-16 &&
 #./validation -in rmat-16 -res rmat-16.res &&
 echo "DONE!"
+
+
+RET="OK"
+KEY_FILES_PATH="${HOME}/ssh_keys"
+KEY_FILE="${KEY_FILES_PATH}/my-17-key"
+REMOTESERVER=eval@192.168.37.136
+REMOTEPATH=/home/eval/bc
+
+#install -d "${KEY_FILES_PATH}"
+#ssh-keygen -t rsa -P "" -f ${KEY_FILE} && \
+#ssh-copy-id -i ${KEY_FILE}.pub ${REMOTESERVER} || RET="FAILED"
+
+ssh -i "${KEY_FILE}" $REMOTESERVER "install -d $REMOTEPATH"
+scp -i "${KEY_FILE}" *.cpp *.h Makefile $REMOTESERVER:$REMOTEPATH
+ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make"
+ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && ./gen_RMAT -s 13 && ./solution -in rmat-13"
