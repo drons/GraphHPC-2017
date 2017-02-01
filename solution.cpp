@@ -68,7 +68,7 @@ public:
     }
 };
 
-void simplified_dijkstra( graph_t* G, vertex_id_t start, DIST_TYPE* distance, vertex_id_t* shortest_count, wavefront_t& queue )
+void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, vertex_id_t* shortest_count, wavefront_t& queue )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
 
@@ -88,12 +88,12 @@ void simplified_dijkstra( graph_t* G, vertex_id_t start, DIST_TYPE* distance, ve
 
         queue.pop_front();
 
-        edge_id_t       ibegin = G->rowsIndices[ v ];
-        edge_id_t       iend = G->rowsIndices[ v + 1 ];
+        vertex_id_t* ibegin = G->endV + row_indites[ v ];
+        vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
 
-        for( edge_id_t e = ibegin; e != iend; ++e )
+        for( vertex_id_t* e = ibegin; e != iend; ++e )
         {
-            vertex_id_t w( G->endV[e] );
+            vertex_id_t w( *e );
             DIST_TYPE   new_dist_v = dist_v + 1;
             DIST_TYPE&  dist_w( distance[ w ] );
             if( dist_w == INVALID_DISTANCE )
@@ -110,7 +110,7 @@ void simplified_dijkstra( graph_t* G, vertex_id_t start, DIST_TYPE* distance, ve
     return;
 }
 
-void betweenness_centrality( graph_t* G, vertex_id_t s,
+void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const vertex_id_t* shortest_count,
                              const wavefront_t& wavefront,
@@ -123,8 +123,8 @@ void betweenness_centrality( graph_t* G, vertex_id_t s,
     for( const vertex_id_t* ii = wavefront.rbegin(); ii != wf_rend; --ii )
     {
         vertex_id_t  w = *ii;
-        vertex_id_t* ibegin = G->endV + G->rowsIndices[ w ];
-        vertex_id_t* iend = G->endV + G->rowsIndices[ w + 1 ];
+        vertex_id_t* ibegin = G->endV + row_indites[ w ];
+        vertex_id_t* iend = G->endV + row_indites[ w + 1 ];
         DIST_TYPE    dist_w_minus_one( distance[w] - 1 );
         double       delta_w( delta[w] );
         double       sc_w( ((double)shortest_count[w]) );
@@ -158,7 +158,14 @@ void run( graph_t* G, double* result )
 {
     vertex_id_t                     n = G->n;
     std::vector<compute_buffer_t>   buffers;
+    std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
+
+    rows_indices32.resize( G->n + 1 );
+    for( size_t n = 0; n < G->n + 1; ++n )
+    {
+        rows_indices32[n] = G->rowsIndices[n];
+    }
 
     buffers.resize( omp_get_max_threads() );
 
@@ -188,8 +195,8 @@ void run( graph_t* G, double* result )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         b.wavefront.reset();
-        simplified_dijkstra( G, s, b.distance.data(), b.shortest_count.data(), b.wavefront );
-        betweenness_centrality( G, s, b.distance.data(), b.shortest_count.data(), b.wavefront, b.delta.data(), b.partial_result.data() );
+        simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.wavefront );
+        betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.wavefront, b.delta.data(), b.partial_result.data() );
     }
 
     #pragma omp parallel for
