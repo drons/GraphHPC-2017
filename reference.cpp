@@ -1,4 +1,5 @@
 #include "defs.h"
+#include <limits>
 
 using namespace std;
 
@@ -144,7 +145,7 @@ void run(graph_t *G, double *result)
         bool flag = false;
         for (vertex_id_t i = 0; i < n; i++) {
             for (vertex_id_t j = 0; j < n; j++) {
-                if (shortest_path.get(i, j) == UINT32_MAX && cur_matrix.get(i, j)) {
+                if (shortest_path.get(i, j) == std::numeric_limits<unsigned>::max() && cur_matrix.get(i, j)) {
                     shortest_path.set(i, j, dist);
                     shortest_paths_cnt.set(i, j, cur_matrix.get(i, j));
                     flag = true;
