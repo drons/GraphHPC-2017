@@ -1,5 +1,5 @@
 #!/bin/sh
-make
+make -f Makefile.gcc
 ./gen_RMAT -s 3 &&
 ./solution -in rmat-3 &&
 ./validation -in rmat-3 -res rmat-3.res &&
@@ -57,8 +57,8 @@ REMOTEPATH=/home/sudorgin/bc
 #ssh-copy-id -i ${KEY_FILE}.pub ${REMOTESERVER} || RET="FAILED"
 
 ssh -i "${KEY_FILE}" $REMOTESERVER "install -d $REMOTEPATH" &&
-scp -i "${KEY_FILE}" *.cpp *.h Makefile $REMOTESERVER:$REMOTEPATH &&
+scp -i "${KEY_FILE}" graph_tools.cpp main.cpp solution.cpp *.h Makefile contest-run.sh $REMOTESERVER:$REMOTEPATH &&
 ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make" &&
 ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && ./gen_RMAT -s 7 && ./solution -in rmat-7" &&
 echo "DONE!" || echo "FAIL!"
-ssh -i "${KEY_FILE}" $REMOTESERVER "rm -r $REMOTEPATH"
+#ssh -i "${KEY_FILE}" $REMOTESERVER "rm -r $REMOTEPATH"

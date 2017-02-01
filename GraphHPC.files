@@ -7,4 +7,6 @@ reference.cpp
 solution.cpp
 validation.cpp
 start.sh
+contest-run.sh
 Makefile
+Makefile.gcc

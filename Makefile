@@ -1,27 +1,15 @@
 # defines
-CXX=g++
+CXX=icc
 SPEEDFLAGS=-O3
-CXXFLAGS=-Wall -std=c++11 -fopenmp $(SPEEDFLAGS)
-LDFLAGS=-lrt -lgomp $(SPEEDFLAGS)
+CXXFLAGS=-Wall -qopenmp $(SPEEDFLAGS)
+LDFLAGS=-lrt -liomp5 $(SPEEDFLAGS)
 
-TARGET = validation gen_RMAT reference solution
+TARGET = solution
 
 all: $(TARGET)
 
 # your own implementation
 solution: main.o solution.o graph_tools.o
-	$(CXX) $^ -o $@ $(LDFLAGS)
-
-# reference implementation
-reference: main.o reference.o graph_tools.o
-	$(CXX) $^ -o $@ $(LDFLAGS)
-
-# RMAT generator
-gen_RMAT: gen_RMAT.o graph_tools.o
-	$(CXX) $^ -o $@ $(LDFLAGS)
-
-# validation
-validation: validation.o reference.o graph_tools.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 .cpp.o:
