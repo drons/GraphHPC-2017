@@ -49,14 +49,16 @@ echo "DONE!"
 RET="OK"
 KEY_FILES_PATH="${HOME}/ssh_keys"
 KEY_FILE="${KEY_FILES_PATH}/my-17-key"
-REMOTESERVER=eval@192.168.37.136
-REMOTEPATH=/home/eval/bc
+REMOTESERVER=sudorgin@access-node.nicevt.ru
+REMOTEPATH=/home/sudorgin/bc
 
 #install -d "${KEY_FILES_PATH}"
 #ssh-keygen -t rsa -P "" -f ${KEY_FILE} && \
 #ssh-copy-id -i ${KEY_FILE}.pub ${REMOTESERVER} || RET="FAILED"
 
-ssh -i "${KEY_FILE}" $REMOTESERVER "install -d $REMOTEPATH"
-scp -i "${KEY_FILE}" *.cpp *.h Makefile $REMOTESERVER:$REMOTEPATH
-ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make"
-ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && ./gen_RMAT -s 13 && ./solution -in rmat-13"
+ssh -i "${KEY_FILE}" $REMOTESERVER "install -d $REMOTEPATH" &&
+scp -i "${KEY_FILE}" *.cpp *.h Makefile $REMOTESERVER:$REMOTEPATH &&
+ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make" &&
+ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && ./gen_RMAT -s 7 && ./solution -in rmat-7" &&
+echo "DONE!" || echo "FAIL!"
+ssh -i "${KEY_FILE}" $REMOTESERVER "rm -r $REMOTEPATH"
