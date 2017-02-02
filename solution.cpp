@@ -8,6 +8,7 @@
 
 typedef vertex_id_t DIST_TYPE;
 typedef vertex_id_t PARENT_TYPE;
+typedef vertex_id_t SCOUNT_TYPE;
 
 class wavefront_t
 {
@@ -68,12 +69,12 @@ public:
     }
 };
 
-void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, vertex_id_t* shortest_count, wavefront_t& queue )
+void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
 
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
-    memset( shortest_count, 0, sizeof(vertex_id_t)*G->n );
+    memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
 
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
@@ -84,7 +85,7 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     {
         vertex_id_t     v = queue.front();
         DIST_TYPE       dist_v = distance[ v ];
-        vertex_id_t     shortest_count_v( shortest_count[v] );
+        SCOUNT_TYPE     shortest_count_v( shortest_count[v] );
 
         queue.pop_front();
 
@@ -110,9 +111,58 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
+void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
+{
+    static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
+
+    memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
+    memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
+
+    distance[ start ] = 0;
+    shortest_count[ start ] = 1;
+
+    size_t      num_verts_on_level = 1;
+    DIST_TYPE   current_level = 0;
+    DIST_TYPE   next_level = 1;
+
+    while( num_verts_on_level > 0 )
+    {
+        num_verts_on_level = 0;
+        for( vertex_id_t v = 0; v != G->n; ++v )
+        {
+            DIST_TYPE   distance_v( distance[v] );
+            if( distance_v == current_level )
+            {
+                vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                for( vertex_id_t* e = ibegin; e != iend; ++e )
+                {
+                    vertex_id_t w( *e );
+                    DIST_TYPE&  distance_w(distance[w]);
+                    if( distance_w == INVALID_DISTANCE )
+                    {
+                        distance_w = next_level;
+                        ++num_verts_on_level;
+                        queue.push_back( w );
+                        shortest_count[w] = shortest_count[v];
+                    }
+                    else
+                    if( distance_w == next_level )
+                    {
+                        shortest_count[w] += shortest_count[v];
+                    }
+                }
+            }
+        }
+        ++current_level;
+        ++next_level;
+    }
+}
+
 void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
-                             const vertex_id_t* shortest_count,
+                             const SCOUNT_TYPE* shortest_count,
                              const wavefront_t& wavefront,
                              double* delta,
                              double* result )
@@ -148,7 +198,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 struct compute_buffer_t
 {
     std::vector<DIST_TYPE>      distance;
-    std::vector<vertex_id_t>    shortest_count;
+    std::vector<SCOUNT_TYPE>    shortest_count;
     wavefront_t                 wavefront;
     std::vector<double>         partial_result;
     std::vector<double>         delta;
@@ -195,7 +245,7 @@ void run( graph_t* G, double* result )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         b.wavefront.reset();
-        simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.wavefront );
+        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.wavefront );
         betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.wavefront, b.delta.data(), b.partial_result.data() );
     }
 
