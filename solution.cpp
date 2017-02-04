@@ -121,10 +121,34 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
 
-    size_t      num_verts_on_level = 1;
+    size_t      num_verts_on_level = 0;
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
 
+    {//unroll first iteration
+        vertex_id_t  v = start;
+        vertex_id_t* ibegin = G->endV + row_indites[ v ];
+        vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+        for( vertex_id_t* e = ibegin; e != iend; ++e )
+        {
+            vertex_id_t w( *e );
+            DIST_TYPE&  distance_w(distance[w]);
+            if( distance_w == INVALID_DISTANCE )
+            {
+                distance_w = next_level;
+                ++num_verts_on_level;
+                shortest_count[w] = shortest_count[v];
+            }
+            else
+            if( distance_w == next_level )
+            {
+                shortest_count[w] += shortest_count[v];
+            }
+        }
+        ++current_level;
+        ++next_level;
+    }
     while( num_verts_on_level > 0 )
     {
         num_verts_on_level = 0;
