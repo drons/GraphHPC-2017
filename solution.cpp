@@ -272,7 +272,7 @@ void run( graph_t* G, double* result )
 //    std::cout << "omp_get_num_teams   " << omp_get_num_teams() << std::endl;
 //    std::cout << "omp_get_team_num    " << omp_get_team_num() << std::endl;
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule ( guided )
     for( vertex_id_t s = 0; s < n; ++s )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
