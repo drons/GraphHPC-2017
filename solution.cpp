@@ -6,9 +6,9 @@
 #include <algorithm>
 #include <omp.h>
 
-typedef vertex_id_t DIST_TYPE;
+typedef uint8_t DIST_TYPE;
 typedef vertex_id_t PARENT_TYPE;
-typedef vertex_id_t SCOUNT_TYPE;
+typedef uint16_t SCOUNT_TYPE;
 
 class wavefront_t
 {
@@ -67,6 +67,17 @@ public:
     {
         return m_p - 1;
     }
+    void swap( wavefront_t& other )
+    {
+        std::swap( m_n, other.m_n );
+        std::swap( m_p, other.m_p );
+        std::swap( m_front, other.m_front );
+        std::swap( m_back, other.m_back );
+    }
+    size_t size() const
+    {
+        return m_back - m_front;
+    }
 };
 
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
@@ -111,7 +122,7 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, DIST_TYPE& max_distance )
+void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& q, wavefront_t& qnext, DIST_TYPE& max_distance )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
 
@@ -121,59 +132,112 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
 
-    size_t      num_verts_on_level = 0;
+    size_t      num_verts_on_level = 1;
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
 
-    {//unroll first iteration
-        vertex_id_t  v = start;
-        vertex_id_t* ibegin = G->endV + row_indites[ v ];
-        vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+    q.reset();
+    qnext.reset();
 
-        for( vertex_id_t* e = ibegin; e != iend; ++e )
+    q.push_back( start );
+
+    do
+    {//unroll first iteration in classic mode
+        num_verts_on_level = 0;
+        const vertex_id_t* rend( q.rend() );
+        for( const vertex_id_t* ii = q.rbegin(); ii != rend; --ii )
         {
-            vertex_id_t w( *e );
-            DIST_TYPE&  distance_w(distance[w]);
-            if( distance_w == INVALID_DISTANCE )
+            vertex_id_t  v = *ii;
+            vertex_id_t* ibegin = G->endV + row_indites[ v ];
+            vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+            for( vertex_id_t* e = ibegin; e != iend; ++e )
             {
-                distance_w = next_level;
-                ++num_verts_on_level;
-                shortest_count[w] = shortest_count[v];
-            }
-            else
-            if( distance_w == next_level )
-            {
-                shortest_count[w] += shortest_count[v];
+                vertex_id_t w( *e );
+                DIST_TYPE&  distance_w(distance[w]);
+                if( distance_w == INVALID_DISTANCE )
+                {
+                    distance_w = next_level;
+                    shortest_count[w] = shortest_count[v];
+                    qnext.push_back( w );
+                }
+                else
+                if( distance_w == next_level )
+                {
+                    shortest_count[w] += shortest_count[v];
+                }
             }
         }
         ++current_level;
         ++next_level;
-    }
+        num_verts_on_level = qnext.size();
+        q.swap( qnext );
+        qnext.reset();
+    }while( num_verts_on_level > 0 && num_verts_on_level < 8*1024 );
+
     while( num_verts_on_level > 0 )
     {
-        num_verts_on_level = 0;
-        for( vertex_id_t v = 0; v != G->n; ++v )
-        {
-            DIST_TYPE   distance_v( distance[v] );
-            if( distance_v == current_level )
+        if( num_verts_on_level < G->n/32 )
+        {//descending
+//          std::cout << "D";
+            num_verts_on_level = 0;
+            for( vertex_id_t v = 0; v != G->n; ++v )
             {
-                vertex_id_t* ibegin = G->endV + row_indites[ v ];
-                vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
-
-                for( vertex_id_t* e = ibegin; e != iend; ++e )
+                const DIST_TYPE   distance_v( distance[v] );
+                if( distance_v == current_level )
                 {
-                    vertex_id_t w( *e );
-                    DIST_TYPE&  distance_w(distance[w]);
-                    if( distance_w == INVALID_DISTANCE )
+                    const vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                    const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                    for( const vertex_id_t* e = ibegin; e != iend; ++e )
                     {
-                        distance_w = next_level;
-                        ++num_verts_on_level;
-                        shortest_count[w] = shortest_count[v];
+                        vertex_id_t w( *e );
+                        DIST_TYPE&  distance_w(distance[w]);
+                        if( distance_w == INVALID_DISTANCE )
+                        {
+                            distance_w = next_level;
+                            ++num_verts_on_level;
+                            shortest_count[w] = shortest_count[v];
+                        }
+                        else
+                        if( distance_w == next_level )
+                        {
+                            shortest_count[w] += shortest_count[v];
+                        }
                     }
-                    else
-                    if( distance_w == next_level )
+                }
+            }
+        }
+        else
+        {//ascending
+//          std::cout << "A";
+            num_verts_on_level = 0;
+            for( vertex_id_t v = 0; v != G->n; ++v )
+            {
+                DIST_TYPE&   distance_v( distance[v] );
+                if( distance_v == INVALID_DISTANCE )
+                {
+                    const vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                    const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                    for( const vertex_id_t* e = ibegin; e != iend; ++e )
                     {
-                        shortest_count[w] += shortest_count[v];
+                        vertex_id_t     w( *e );
+                        const DIST_TYPE distance_w( distance[w] );
+
+                        if( distance_w == current_level )
+                        {
+                            if( distance_v == INVALID_DISTANCE )
+                            {
+                                distance_v = next_level;
+                                shortest_count[v] = shortest_count[w];
+                                ++num_verts_on_level;
+                            }
+                            else
+                            {
+                                shortest_count[v] += shortest_count[w];
+                            }
+                        }
                     }
                 }
             }
@@ -203,18 +267,18 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
             {
                 continue;
             }
-            double       delta_w( delta[w] );
-            double       sc_w( ((double)shortest_count[w]) );
-            vertex_id_t* ibegin = G->endV + row_indites[ w ];
-            vertex_id_t* iend = G->endV + row_indites[ w + 1 ];
+            double              delta_w( delta[w] );
+            double              sc_w( ((double)shortest_count[w]) );
+            const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
+            const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
 
-            for( vertex_id_t* e = ibegin; e != iend; ++e )
+            for( const vertex_id_t* e = ibegin; e != iend; ++e )
             {
                 vertex_id_t v( *e );
                 if( dist_w_minus_one == distance[v] )
                 {
                     const double sc_v( ((double)shortest_count[v]) );
-                    delta[v] += (sc_v + sc_v*delta_w)/sc_w;
+                    delta[v] += sc_v*(1 + delta_w)/sc_w;
                 }
             }
             if( w != s )
@@ -234,8 +298,27 @@ struct compute_buffer_t
 {
     std::vector<DIST_TYPE>      distance;
     std::vector<SCOUNT_TYPE>    shortest_count;
+    wavefront_t                 q;
+    wavefront_t                 qnext;
     std::vector<double>         partial_result;
     std::vector<double>         delta;
+
+    void dump_bfs_result( vertex_id_t s )
+    {
+        std::cout << " s = " << s << std::endl;
+        std::cout << "d  = { ";
+        for( size_t i = 0; i != distance.size(); ++i )
+        {
+            std::cout << distance[i] << " ";
+        }
+        std::cout << "}" << std::endl;
+        std::cout << "sc = { ";
+        for( size_t i = 0; i != shortest_count.size(); ++i )
+        {
+            std::cout << shortest_count[i] << " ";
+        }
+        std::cout << "}" << std::endl;
+    }
 };
 
 void run( graph_t* G, double* result )
@@ -260,6 +343,8 @@ void run( graph_t* G, double* result )
 
         b.distance.resize( G->n );
         b.shortest_count.resize( G->n );
+        b.q.resize( G->n );
+        b.qnext.resize( G->n );
         b.partial_result.resize( G->n );
         b.delta.resize( G->n );
 
@@ -278,8 +363,19 @@ void run( graph_t* G, double* result )
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         DIST_TYPE           max_distance = 0;
 
-        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), max_distance );
+        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, max_distance );
         betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), max_distance, b.delta.data(), b.partial_result.data() );
+
+        if(0)
+        {
+            std::cout << "bfs";
+            b.dump_bfs_result( s );
+            b.q.reset();
+            simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q );
+
+            std::cout << "simplified_dijkstra";
+            b.dump_bfs_result( s );
+        }
     }
 
     #pragma omp parallel for
