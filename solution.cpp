@@ -281,16 +281,20 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                     delta[v] += sc_v*(1 + delta_w)/sc_w;
                 }
             }
-            if( w != s )
-            {
-                result[w] += delta_w;
-            }
         }
         if( max_distance == 0 )
         {
             break;
         }
         --max_distance;
+    }
+
+    for( vertex_id_t w = 0; w != G->n; ++w )
+    {
+        if( w != s )
+        {
+            result[w] += delta[w];
+        }
     }
 }
 
@@ -378,7 +382,7 @@ void run( graph_t* G, double* result )
         }
     }
 
-    #pragma omp parallel for
+    #pragma omp parallel for simd
     for( vertex_id_t s = 0; s < n; ++s )
     {
         double  r = 0;
