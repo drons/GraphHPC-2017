@@ -122,7 +122,7 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& q, wavefront_t& qnext, DIST_TYPE& max_distance )
+void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& q, wavefront_t& qnext, vertex_id_t* vertex_on_level_count, DIST_TYPE& max_distance )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
 
@@ -131,6 +131,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
 
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
+    vertex_on_level_count[0] = 1;
 
     size_t      num_verts_on_level = 1;
     DIST_TYPE   current_level = 0;
@@ -171,6 +172,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
         ++current_level;
         ++next_level;
         num_verts_on_level = qnext.size();
+        vertex_on_level_count[current_level] = num_verts_on_level;
         q.swap( qnext );
         qnext.reset();
     }while( num_verts_on_level > 0 && num_verts_on_level < 8*1024 );
@@ -244,6 +246,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
         }
         ++current_level;
         ++next_level;
+        vertex_on_level_count[current_level] = num_verts_on_level;
     }
     max_distance = current_level;
 }
@@ -251,7 +254,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
 void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
-                             DIST_TYPE max_distance,
+                             vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
                              double* delta,
                              double* result )
 {
@@ -260,29 +263,60 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     --max_distance;
     for(;;)
     {
-        for( vertex_id_t w = 0; w != G->n; ++w )
+//        std::cout << "level = " << max_distance << " " << vertex_on_level_count[ max_distance + 1 ]
+//                  << " " << vertex_on_level_count[ max_distance ] << std::endl;
+        if( vertex_on_level_count[ max_distance + 1 ] <
+            vertex_on_level_count[ max_distance ] )
         {
-            DIST_TYPE    dist_w_minus_one( distance[w] - 1 );
-            if( dist_w_minus_one != max_distance )
+            for( vertex_id_t w = 0; w != G->n; ++w )
             {
-                continue;
-            }
-            double              delta_w( delta[w] );
-            double              sc_w( ((double)shortest_count[w]) );
-            const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
-            const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
-
-            for( const vertex_id_t* e = ibegin; e != iend; ++e )
-            {
-                vertex_id_t v( *e );
-                if( dist_w_minus_one == distance[v] )
+                DIST_TYPE    dist_w_minus_one( distance[w] - 1 );
+                if( dist_w_minus_one != max_distance )
                 {
-                    const double sc_v( ((double)shortest_count[v]) );
-                    delta[v] += sc_v*(1 + delta_w)/sc_w;
+                    continue;
+                }
+                double              delta_w( delta[w] );
+                double              sc_w( ((double)shortest_count[w]) );
+                const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
+                const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
+
+                for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                {
+                    vertex_id_t v( *e );
+                    if( dist_w_minus_one == distance[v] )
+                    {
+                        const double sc_v( ((double)shortest_count[v]) );
+                        delta[v] += sc_v*(1 + delta_w)/sc_w;
+                    }
                 }
             }
         }
-        if( max_distance == 0 )
+        else
+        {
+            for( vertex_id_t v = 0; v != G->n; ++v )
+            {
+                if( distance[v] != max_distance )
+                {
+                    continue;
+                }
+                double&             delta_v( delta[v] );
+                const double        sc_v( ((double)shortest_count[v]) );
+                const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
+                const vertex_id_t*  iend = G->endV + row_indites[ v + 1 ];
+
+                for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                {
+                    vertex_id_t w( *e );
+                    DIST_TYPE   dist_w_minus_one( distance[w] - 1 );
+
+                    if( dist_w_minus_one == max_distance )
+                    {
+                        delta_v += sc_v*(1 + delta[w])/(double)shortest_count[w];
+                    }
+                }
+            }
+        }
+        if( max_distance == 1 )
         {
             break;
         }
@@ -302,24 +336,32 @@ struct compute_buffer_t
 {
     std::vector<DIST_TYPE>      distance;
     std::vector<SCOUNT_TYPE>    shortest_count;
+    std::vector<vertex_id_t>    vertex_on_level_count;
     wavefront_t                 q;
     wavefront_t                 qnext;
     std::vector<double>         partial_result;
     std::vector<double>         delta;
 
-    void dump_bfs_result( vertex_id_t s )
+    void dump_bfs_result( vertex_id_t s, vertex_id_t max_distance )
     {
-        std::cout << " s = " << s << std::endl;
+        std::cout << " s = " << s << " ";
+
         std::cout << "d  = { ";
         for( size_t i = 0; i != distance.size(); ++i )
         {
             std::cout << distance[i] << " ";
         }
-        std::cout << "}" << std::endl;
+        std::cout << "} ";
         std::cout << "sc = { ";
         for( size_t i = 0; i != shortest_count.size(); ++i )
         {
             std::cout << shortest_count[i] << " ";
+        }
+        std::cout << "} ";
+        std::cout << "vc = { ";
+        for( size_t i = 0; i != max_distance + 1; ++i )
+        {
+            std::cout << vertex_on_level_count[i] << " ";
         }
         std::cout << "}" << std::endl;
     }
@@ -347,6 +389,7 @@ void run( graph_t* G, double* result )
 
         b.distance.resize( G->n );
         b.shortest_count.resize( G->n );
+        b.vertex_on_level_count.resize( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
         b.q.resize( G->n );
         b.qnext.resize( G->n );
         b.partial_result.resize( G->n );
@@ -367,18 +410,18 @@ void run( graph_t* G, double* result )
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         DIST_TYPE           max_distance = 0;
 
-        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, max_distance );
-        betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), max_distance, b.delta.data(), b.partial_result.data() );
+        std::fill( b.vertex_on_level_count.begin(), b.vertex_on_level_count.end(), 0 );
+        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, b.vertex_on_level_count.data(), max_distance );
+        betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.vertex_on_level_count.data(), max_distance, b.delta.data(), b.partial_result.data() );
 
         if(0)
         {
             std::cout << "bfs";
-            b.dump_bfs_result( s );
-            b.q.reset();
-            simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q );
-
-            std::cout << "simplified_dijkstra";
-            b.dump_bfs_result( s );
+            b.dump_bfs_result( s, max_distance );
+//            b.q.reset();
+//            simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q );
+//            std::cout << "simplified_dijkstra";
+//            b.dump_bfs_result( s, max_distance );
         }
     }
 
