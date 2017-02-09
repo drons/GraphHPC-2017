@@ -122,7 +122,12 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& q, wavefront_t& qnext, vertex_id_t* vertex_on_level_count, DIST_TYPE& max_distance )
+void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
+          DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
+          wavefront_t& q, wavefront_t& qnext,
+          vertex_id_t* vertex_on_level_count,
+          const double* global_vertex_on_level_count,
+          const double* global_unmarked_vertex_count, DIST_TYPE& max_distance )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
 
@@ -175,11 +180,12 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST
         vertex_on_level_count[current_level] = num_verts_on_level;
         q.swap( qnext );
         qnext.reset();
-    }while( num_verts_on_level > 0 && num_verts_on_level < 8*1024 );
+    }while( num_verts_on_level > 0 && num_verts_on_level < 1024 );
 
     while( num_verts_on_level > 0 )
     {
-        if( num_verts_on_level < G->n/32 )
+        if( global_vertex_on_level_count[current_level] <
+            global_unmarked_vertex_count[current_level] )
         {//descending
 //          std::cout << "D";
             num_verts_on_level = 0;
@@ -337,6 +343,8 @@ struct compute_buffer_t
     std::vector<DIST_TYPE>      distance;
     std::vector<SCOUNT_TYPE>    shortest_count;
     std::vector<vertex_id_t>    vertex_on_level_count;
+    std::vector<double>         global_vertex_on_level_count;
+    std::vector<double>         global_unmarked_vertex_count;
     wavefront_t                 q;
     wavefront_t                 qnext;
     std::vector<double>         partial_result;
@@ -386,15 +394,19 @@ void run( graph_t* G, double* result )
     for( size_t t = 0; t < max_work_threads; ++t )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
-
+        size_t              max_distance( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
         b.distance.resize( G->n );
         b.shortest_count.resize( G->n );
-        b.vertex_on_level_count.resize( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
+        b.vertex_on_level_count.resize( max_distance );
+        b.global_vertex_on_level_count.resize( max_distance );
+        b.global_unmarked_vertex_count.resize( max_distance );
         b.q.resize( G->n );
         b.qnext.resize( G->n );
         b.partial_result.resize( G->n );
         b.delta.resize( G->n );
 
+        std::fill( b.global_vertex_on_level_count.begin(), b.global_vertex_on_level_count.end(), 0 );
+        std::fill( b.global_unmarked_vertex_count.begin(), b.global_unmarked_vertex_count.end(), G->n );
         std::fill( b.partial_result.begin(), b.partial_result.end(), 0 );
     }
 
@@ -411,8 +423,16 @@ void run( graph_t* G, double* result )
         DIST_TYPE           max_distance = 0;
 
         std::fill( b.vertex_on_level_count.begin(), b.vertex_on_level_count.end(), 0 );
-        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, b.vertex_on_level_count.data(), max_distance );
+        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, b.vertex_on_level_count.data(), b.global_vertex_on_level_count.data(), b.global_unmarked_vertex_count.data(), max_distance );
         betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.vertex_on_level_count.data(), max_distance, b.delta.data(), b.partial_result.data() );
+
+        vertex_id_t unmarked = G->n;
+        for( size_t distance = 0; distance != max_distance; ++distance )
+        {
+            unmarked -= b.vertex_on_level_count[distance];
+            b.global_vertex_on_level_count[distance] += b.vertex_on_level_count[distance];
+            b.global_unmarked_vertex_count[distance] += unmarked;
+        }
 
         if(0)
         {
