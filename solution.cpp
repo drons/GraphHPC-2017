@@ -414,6 +414,9 @@ void run( graph_t* G, double* result )
 //    std::cout << "omp_get_num_teams   " << omp_get_num_teams() << std::endl;
 //    std::cout << "omp_get_team_num    " << omp_get_team_num() << std::endl;
 
+#ifdef MAXNODES
+    n = MAXNODES;
+#endif
     #pragma omp parallel for schedule ( guided )
     for( vertex_id_t s = 0; s < n; ++s )
     {

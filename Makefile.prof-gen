@@ -2,11 +2,11 @@
 CXX=icc
 
 #-xCORE-AVX2 -mtune=core-avx2
-SPEEDFLAGS=-O3 -Ofast
-#PROFGENFLAGS=-prof-gen=threadsafe -prof-dir=./
-#PROFUSEFLAGS=-prof-use -prof-dir=./
+SPEEDFLAGS=-O3 -Ofast  -funroll-loops -qopt-prefetch=5
+PROFGENFLAGS=-prof-gen=threadsafe -prof-dir=./
+#PROFUSEFLAGS=-prof-use -prof-dir=/home/sudorgin/intel
 #-debug inline-debug-info
-CXXFLAGS= -Wall -qopenmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS)
+CXXFLAGS= -Wall -qopenmp -DMAXNODES=4096 $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS)
 LDFLAGS=-lrt -liomp5 $(CULIBS) $(SPEEDFLAGS)
 
 TARGET = validation gen_RMAT reference solution

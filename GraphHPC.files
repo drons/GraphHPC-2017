@@ -8,5 +8,7 @@ solution.cpp
 validation.cpp
 start.sh
 contest-run.sh
+contest-analize.sh
 Makefile
+Makefile.prof-gen
 Makefile.gcc
