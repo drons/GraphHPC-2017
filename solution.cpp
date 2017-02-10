@@ -264,6 +264,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                              double* delta,
                              double* result )
 {
+    if( max_distance <= 1 )
+        return;
     memset( delta, 0, sizeof(double)*G->n );
 
     --max_distance;
@@ -281,8 +283,6 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                 {
                     continue;
                 }
-                double              delta_w( delta[w] );
-                double              sc_w( ((double)shortest_count[w]) );
                 const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
                 const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
 
@@ -292,7 +292,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                     if( dist_w_minus_one == distance[v] )
                     {
                         const double sc_v( ((double)shortest_count[v]) );
-                        delta[v] += sc_v*(1 + delta_w)/sc_w;
+                        delta[v] += sc_v*(1 + delta[w])/((double)shortest_count[w]);
                     }
                 }
             }
@@ -305,8 +305,6 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                 {
                     continue;
                 }
-                double&             delta_v( delta[v] );
-                const double        sc_v( ((double)shortest_count[v]) );
                 const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
                 const vertex_id_t*  iend = G->endV + row_indites[ v + 1 ];
 
@@ -317,7 +315,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
                     if( dist_w_minus_one == max_distance )
                     {
-                        delta_v += sc_v*(1 + delta[w])/(double)shortest_count[w];
+                        delta[v] += ((double)shortest_count[v])*(1 + delta[w])/(double)shortest_count[w];
                     }
                 }
             }
