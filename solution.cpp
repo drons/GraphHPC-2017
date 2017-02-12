@@ -7,8 +7,9 @@
 #include <omp.h>
 
 typedef uint8_t DIST_TYPE;
-typedef vertex_id_t PARENT_TYPE;
 typedef uint16_t SCOUNT_TYPE;
+typedef double DELTA_TYPE;
+typedef double PARTIAL_TYPE;
 
 class wavefront_t
 {
@@ -261,12 +262,12 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
-                             double* delta,
-                             double* result )
+                             DELTA_TYPE* delta,
+                             PARTIAL_TYPE* result )
 {
     if( max_distance <= 1 )
         return;
-    memset( delta, 0, sizeof(double)*G->n );
+    memset( delta, 0, sizeof(DELTA_TYPE)*G->n );
 
     --max_distance;
     for(;;)
@@ -291,8 +292,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                     vertex_id_t v( *e );
                     if( dist_w_minus_one == distance[v] )
                     {
-                        const double sc_v( ((double)shortest_count[v]) );
-                        delta[v] += sc_v*(1 + delta[w])/((double)shortest_count[w]);
+                        const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
+                        delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
                     }
                 }
             }
@@ -315,7 +316,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
                     if( dist_w_minus_one == max_distance )
                     {
-                        delta[v] += ((double)shortest_count[v])*(1 + delta[w])/(double)shortest_count[w];
+                        delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
                     }
                 }
             }
@@ -345,8 +346,8 @@ struct compute_buffer_t
     std::vector<double>         global_unmarked_vertex_count;
     wavefront_t                 q;
     wavefront_t                 qnext;
-    std::vector<double>         partial_result;
-    std::vector<double>         delta;
+    std::vector<PARTIAL_TYPE>   partial_result;
+    std::vector<DELTA_TYPE>     delta;
 
     void dump_bfs_result( vertex_id_t s, vertex_id_t max_distance )
     {
