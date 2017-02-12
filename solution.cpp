@@ -1,85 +1,4 @@
-#include "defs.h"
-
-#include <limits>
-#include <deque>
-#include <map>
-#include <algorithm>
-#include <omp.h>
-
-typedef uint8_t DIST_TYPE;
-typedef uint16_t SCOUNT_TYPE;
-typedef double DELTA_TYPE;
-typedef double PARTIAL_TYPE;
-
-class wavefront_t
-{
-    vertex_id_t     m_n;
-    vertex_id_t*    m_p;
-    vertex_id_t*    m_front;
-    vertex_id_t*    m_back;
-public:
-    wavefront_t()
-    {
-        m_n = 0;
-        m_p = NULL;
-        m_front = NULL;
-        m_back = NULL;
-    }
-    ~wavefront_t()
-    {
-        free( m_p );
-    }
-    void resize( vertex_id_t n )
-    {
-        m_n = n;
-        if( m_p != NULL )
-            free( m_p );
-        m_p = (vertex_id_t*)malloc( n*sizeof( vertex_id_t ) );
-        m_front = m_p;
-        m_back = m_p;
-    }
-    void push_back( vertex_id_t v )
-    {
-        *m_back = v;
-        ++m_back;
-    }
-    bool empty() const
-    {
-        return m_front == m_back;
-    }
-    vertex_id_t front() const
-    {
-        return *m_front;
-    }
-    void pop_front()
-    {
-        ++m_front;
-    }
-    void reset()
-    {
-        m_front = m_p;
-        m_back = m_p;
-    }
-    const vertex_id_t* rbegin() const
-    {
-        return m_back - 1;
-    }
-    const vertex_id_t* rend() const
-    {
-        return m_p - 1;
-    }
-    void swap( wavefront_t& other )
-    {
-        std::swap( m_n, other.m_n );
-        std::swap( m_p, other.m_p );
-        std::swap( m_front, other.m_front );
-        std::swap( m_back, other.m_back );
-    }
-    size_t size() const
-    {
-        return m_back - m_front;
-    }
-};
+#include "solution.h"
 
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
 {
@@ -337,43 +256,6 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     }
 }
 
-struct compute_buffer_t
-{
-    std::vector<DIST_TYPE>      distance;
-    std::vector<SCOUNT_TYPE>    shortest_count;
-    std::vector<vertex_id_t>    vertex_on_level_count;
-    std::vector<double>         global_vertex_on_level_count;
-    std::vector<double>         global_unmarked_vertex_count;
-    wavefront_t                 q;
-    wavefront_t                 qnext;
-    std::vector<PARTIAL_TYPE>   partial_result;
-    std::vector<DELTA_TYPE>     delta;
-
-    void dump_bfs_result( vertex_id_t s, vertex_id_t max_distance )
-    {
-        std::cout << " s = " << s << " ";
-
-        std::cout << "d  = { ";
-        for( size_t i = 0; i != distance.size(); ++i )
-        {
-            std::cout << distance[i] << " ";
-        }
-        std::cout << "} ";
-        std::cout << "sc = { ";
-        for( size_t i = 0; i != shortest_count.size(); ++i )
-        {
-            std::cout << shortest_count[i] << " ";
-        }
-        std::cout << "} ";
-        std::cout << "vc = { ";
-        for( size_t i = 0; i != max_distance + 1; ++i )
-        {
-            std::cout << vertex_on_level_count[i] << " ";
-        }
-        std::cout << "}" << std::endl;
-    }
-};
-
 void run( graph_t* G, double* result )
 {
     vertex_id_t                     n = G->n;
@@ -393,20 +275,7 @@ void run( graph_t* G, double* result )
     for( size_t t = 0; t < max_work_threads; ++t )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
-        size_t              max_distance( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
-        b.distance.resize( G->n );
-        b.shortest_count.resize( G->n );
-        b.vertex_on_level_count.resize( max_distance );
-        b.global_vertex_on_level_count.resize( max_distance );
-        b.global_unmarked_vertex_count.resize( max_distance );
-        b.q.resize( G->n );
-        b.qnext.resize( G->n );
-        b.partial_result.resize( G->n );
-        b.delta.resize( G->n );
-
-        std::fill( b.global_vertex_on_level_count.begin(), b.global_vertex_on_level_count.end(), 0 );
-        std::fill( b.global_unmarked_vertex_count.begin(), b.global_unmarked_vertex_count.end(), G->n );
-        std::fill( b.partial_result.begin(), b.partial_result.end(), 0 );
+        b.resize( G );
     }
 
 //    std::cout << "omp_get_num_procs   " << omp_get_num_procs() << std::endl;
@@ -447,7 +316,7 @@ void run( graph_t* G, double* result )
         }
     }
 
-    #pragma omp parallel for simd
+    //#pragma omp parallel for simd
     for( vertex_id_t s = 0; s < n; ++s )
     {
         double  r = 0;
