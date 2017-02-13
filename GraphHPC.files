@@ -2,9 +2,13 @@ defs.h
 gen_RMAT.cpp
 graph_tools.cpp
 main.cpp
+main_mpi.cpp
 README
 reference.cpp
+reference_bfs.cpp
+solution.h
 solution.cpp
+solution_mpi.cpp
 validation.cpp
 start.sh
 contest-run.sh
@@ -12,3 +16,4 @@ contest-analize.sh
 Makefile
 Makefile.prof-gen
 Makefile.gcc
+Makefile.mpi

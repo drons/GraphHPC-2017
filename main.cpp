@@ -5,7 +5,7 @@ using namespace std;
 char inFilename[FILENAME_LEN];
 char outFilename[FILENAME_LEN];
 
-int nIters = 16;
+int nIters = 4;
 #if defined(CLOCK_MONOTONIC)
 #define CLOCK CLOCK_MONOTONIC
 #elif defined(CLOCK_REALTIME)
@@ -18,11 +18,12 @@ int nIters = 16;
 void usage(int argc, char **argv)
 {
     printf("Usage:\n");
-    printf("%s -in <input> [options]\n", argv[0]);
+    printf("%s -in <input> [other options]\n", argv[0]);
     printf("Options:\n");
     printf("    -in <input> -- input graph filename\n");
-    printf("    -nIters <nIters> -- number of iterations. By default 64\n");
-    exit(1);
+    printf("    -nIters <nIters> -- number of iterations\n");
+    printf("    -out <output filename>, file for the result storage\n");
+	exit(1);
 }
 
 /* initialization */
@@ -32,6 +33,7 @@ void init(int argc, char **argv, graph_t *G)
     inFilename[0] = '\0';
     outFilename[0] = '\0';
     bool no_inFilename = true;
+	bool no_outFilename = true;
     if (argc == 1) {
         usage(argc, argv);
     }
@@ -46,13 +48,18 @@ void init(int argc, char **argv, graph_t *G)
         if (!strcmp(argv[i], "-nIters")) {
             nIters = (int)atoi(argv[++i]);
         }
+		
+		if (!strcmp(argv[i], "-out")) {
+            no_outFilename = false;
+            sprintf(outFilename, argv[++i]);
+        }
     }
     
     if (no_inFilename) {
         usage(argc, argv);
     }
     
-    if (strlen(outFilename) == 0) {
+    if (no_outFilename) {
         sprintf(outFilename, "%s.res", inFilename);
     }
 }
@@ -74,8 +81,6 @@ int main(int argc, char **argv)
     /* initializing and reading the graph */
     init(argc, argv, &g);
     readGraph(&g, inFilename);
-    
-    //printGraph(&g);
     
     alg_time = new double[nIters];
     assert(alg_time != NULL);

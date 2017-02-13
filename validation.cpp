@@ -1,6 +1,6 @@
 #include "defs.h"
 
-char inFilename[FILENAME_LEN];
+char ansFilename[FILENAME_LEN];
 char resFilename[FILENAME_LEN];
 
 using namespace std;
@@ -10,9 +10,9 @@ void usage(int argc, char **argv)
 {
     printf("%s\n", argv[0]);
     printf("Usage:\n");
-    printf("%s -in <input> -res <result>\n", argv[0]);
+    printf("%s -ans <right answer> -res <result>\n", argv[0]);
     printf("Options:\n");
-    printf("    -in <input> -- input graph filename\n");
+    printf("    -ans <right answer> -- right answer filename\n");
     printf("    -res <result> -- result filename\n");
     exit(1);
 }
@@ -21,15 +21,15 @@ void usage(int argc, char **argv)
 void init(int argc, char **argv)
 {
     int l;
-    bool no_inFilename = true;
+    bool no_ansFilename = true;
     bool no_resFilename = true;
-    inFilename[0] = resFilename[0] = '\0';
+    ansFilename[0] = resFilename[0] = '\0';
     
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-in")) {
+        if (!strcmp(argv[i], "-ans")) {
             l = strlen(argv[++i]);
-            strncpy(inFilename, argv[i], (l > FILENAME_LEN - 1 ? FILENAME_LEN - 1 : l));
-            no_inFilename = false;
+            strncpy(ansFilename, argv[i], (l > FILENAME_LEN - 1 ? FILENAME_LEN - 1 : l));
+            no_ansFilename = false;
         }
         
         if (!strcmp(argv[i], "-res")) {
@@ -39,60 +39,81 @@ void init(int argc, char **argv)
         }
     }
     
-    if (no_inFilename || no_resFilename) {
+    if (no_ansFilename || no_resFilename) {
         usage(argc, argv);
     }
 }
 
 int main(int argc, char **argv)
 {
-    graph_t g;
     init(argc, argv);
     
-    /* read graph from the file */
-    readGraph(&g, inFilename);
-    
-    double *answer = new double[g.n];
-    assert(answer != NULL);
-    /* get the right answer */
-
-    struct timespec start_ts, finish_ts;
-    clock_gettime(CLOCK_MONOTONIC, &start_ts);
-    run(&g, answer);
-    clock_gettime(CLOCK_MONOTONIC, &finish_ts);
-    double time = (finish_ts.tv_nsec - (double)start_ts.tv_nsec) * 1.0e-9 + (finish_ts.tv_sec - (double)start_ts.tv_sec);
-    cout.precision(5);
-    cout << "Reference time " << time << endl;
-
-    FILE *f = fopen(resFilename, "r");
+    FILE *f;
+    f = fopen(ansFilename, "rb");
     assert(f != NULL);
-    double *result = new double[g.n];
-    assert(result != NULL);
-    /* read the result */
-    assert(fread(result, sizeof(double), g.n, f) == g.n);
+    vector<double> answer;
+    /* read the right answer */
+    double val;
+    while (fread(&val, sizeof(double), 1, f) == 1) {
+        answer.push_back(val);
+    }
+    
     fclose(f);
     
+    vertex_id_t n = answer.size();
+    f = fopen(resFilename, "rb");
+    assert(f != NULL);
+    double *result = new double[n];
+    assert(result != NULL);
+    /* read the result */
+    assert(fread(result, sizeof(double), n, f) == n);
+    fclose(f);
+    
+    bool right_answer = true;
+    /* first check */
+    for (vertex_id_t i = 0; i < n; i++) {
+        switch (fpclassify(result[i])) {
+            case FP_INFINITE:
+                right_answer = false;
+                break;
+            case FP_NAN:
+                right_answer = false;
+                break;
+            case FP_SUBNORMAL:
+                right_answer = false;
+                break;
+            default:
+                break;
+        }
+    }
+    
+    if (!right_answer) {
+        /* red color */
+        cout << "\033[1;31mNan answer\033[0m\n";
+        
+        delete[] result;
+        
+        return 0;
+    }
+    
     /* comparison the result with right answer */
-    for (vertex_id_t i = 0; i < g.n; i++) {
-        if (fabs(answer[i] - result[i]) > eps) {
+    for (vertex_id_t i = 0; i < n; i++) {
+        if (!(fabs(answer[i] - result[i]) < eps || fabs(answer[i] - result[i]) / answer[i] < eps)) {
             /* red color */
-            cout.precision( 10 );
-            cout << "\033[1;31mWrong answer " << answer[i] << " " << result[i] << "\033[0m\n";
+            cout << "\033[1;31mWrong answer i = " << i
+                 << " answer = " << answer[i]
+                 << " result = " << result[i] << "\033[0m\n";
             
-            delete[] answer;
             delete[] result;
-            freeGraph(&g);
             
-            return -1;
+            return 0;
         }
     }
     
     /* green color */
     cout << "\033[1;32mAccepted\033[0m\n";
     
-    delete[] answer;
     delete[] result;
-    freeGraph(&g);
     
     return 0;
 }
