@@ -307,12 +307,18 @@ void run( graph_t* G, double* result )
 
         if(0)
         {
-            std::cout << "bfs";
-            b.dump_bfs_result( s, max_distance );
-//            b.q.reset();
-//            simplified_dijkstra( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q );
+            compute_buffer_t    t;
+            t.resize( G );
+//            std::cout << "bfs";
+//            b.dump_bfs_result( s, max_distance );
+            simplified_dijkstra( G, rows_indices32.data(), s, t.distance.data(), t.shortest_count.data(), t.q );
 //            std::cout << "simplified_dijkstra";
 //            b.dump_bfs_result( s, max_distance );
+            if( !t.is_equal( b ) )
+            {
+                std::cout << "s = " << s;
+                exit( -1 );
+            }
         }
     }
 

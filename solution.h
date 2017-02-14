@@ -101,7 +101,14 @@ struct compute_buffer_t
         std::cout << "d  = { ";
         for( size_t i = 0; i != distance.size(); ++i )
         {
-            std::cout << distance[i] << " ";
+            if( distance[i] > max_distance + 1 )
+            {
+                std::cout << " " << " ";
+            }
+            else
+            {
+                std::cout << distance[i] << " ";
+            }
         }
         std::cout << "} ";
         std::cout << "sc = { ";
@@ -117,6 +124,28 @@ struct compute_buffer_t
         }
         std::cout << "}" << std::endl;
     }
+
+    bool is_equal( const compute_buffer_t& other )
+    {
+        for( size_t i = 0; i != distance.size(); ++i )
+        {
+            if( distance[i] != other.distance[i] )
+            {
+                std::cout << " distance[i] != other.distance[i] " << "i = " << i << " " << distance[i] << " " << other.distance[i] << std::endl;
+                return false;
+            }
+        }
+        for( size_t i = 0; i != shortest_count.size(); ++i )
+        {
+            if( shortest_count[i] != other.shortest_count[i] )
+            {
+                std::cout << " shortest_count[i] != other.shortest_count[i] " << std::endl;
+                return false;
+            }
+        }
+        return true;
+    }
+
     void resize( const graph_t* G )
     {
         size_t              max_distance( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
