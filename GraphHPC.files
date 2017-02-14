@@ -1,6 +1,7 @@
 defs.h
 gen_RMAT.cpp
 graph_tools.cpp
+.gitignore
 main.cpp
 main_mpi.cpp
 README
