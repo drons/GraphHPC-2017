@@ -188,18 +188,18 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         return;
     memset( delta, 0, sizeof(DELTA_TYPE)*G->n );
 
+    DIST_TYPE   next_distance = max_distance;
     --max_distance;
     for(;;)
     {
 //        std::cout << "level = " << max_distance << " " << vertex_on_level_count[ max_distance + 1 ]
 //                  << " " << vertex_on_level_count[ max_distance ] << std::endl;
-        if( vertex_on_level_count[ max_distance + 1 ] <
+        if( vertex_on_level_count[ next_distance ] <
             vertex_on_level_count[ max_distance ] )
         {
             for( vertex_id_t w = 0; w != G->n; ++w )
             {
-                DIST_TYPE    dist_w_minus_one( distance[w] - 1 );
-                if( dist_w_minus_one != max_distance )
+                if( distance[w] != next_distance )
                 {
                     continue;
                 }
@@ -209,7 +209,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                 for( const vertex_id_t* e = ibegin; e != iend; ++e )
                 {
                     vertex_id_t v( *e );
-                    if( dist_w_minus_one == distance[v] )
+                    if( max_distance == distance[v] )
                     {
                         const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
                         delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
@@ -231,9 +231,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                 for( const vertex_id_t* e = ibegin; e != iend; ++e )
                 {
                     vertex_id_t w( *e );
-                    DIST_TYPE   dist_w_minus_one( distance[w] - 1 );
 
-                    if( dist_w_minus_one == max_distance )
+                    if( distance[w] == next_distance )
                     {
                         delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
                     }
@@ -245,6 +244,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
             break;
         }
         --max_distance;
+        --next_distance;
     }
 
     for( vertex_id_t w = 0; w != G->n; ++w )
@@ -287,7 +287,7 @@ void run( graph_t* G, double* result )
 #ifdef MAXNODES
     n = MAXNODES;
 #endif
-    #pragma omp parallel for schedule ( guided )
+    #pragma omp parallel for schedule ( dynamic )
     for( vertex_id_t s = 0; s < n; ++s )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
@@ -322,7 +322,7 @@ void run( graph_t* G, double* result )
         }
     }
 
-    //#pragma omp parallel for simd
+    #pragma omp parallel for
     for( vertex_id_t s = 0; s < n; ++s )
     {
         double  r = 0;
