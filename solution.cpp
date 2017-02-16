@@ -58,6 +58,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
     shortest_count[ start ] = 1;
     vertex_on_level_count[0] = 1;
 
+    size_t      n = G->n;
     size_t      num_verts_on_level = 1;
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
@@ -73,13 +74,13 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         const vertex_id_t* rend( q.rend() );
         for( const vertex_id_t* ii = q.rbegin(); ii != rend; --ii )
         {
-            vertex_id_t  v = *ii;
+            size_t  v = *ii;
             vertex_id_t* ibegin = G->endV + row_indites[ v ];
             vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
 
             for( vertex_id_t* e = ibegin; e != iend; ++e )
             {
-                vertex_id_t w( *e );
+                size_t w( *e );
                 DIST_TYPE&  distance_w(distance[w]);
                 if( distance_w == INVALID_DISTANCE )
                 {
@@ -109,7 +110,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         {//descending
 //          std::cout << "D";
             num_verts_on_level = 0;
-            for( vertex_id_t v = 0; v != G->n; ++v )
+            for( size_t v = 0; v != n; ++v )
             {
                 const DIST_TYPE   distance_v( distance[v] );
                 if( distance_v == current_level )
@@ -119,7 +120,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
 
                     for( const vertex_id_t* e = ibegin; e != iend; ++e )
                     {
-                        vertex_id_t w( *e );
+                        size_t w( *e );
                         DIST_TYPE&  distance_w(distance[w]);
                         if( distance_w == INVALID_DISTANCE )
                         {
@@ -140,7 +141,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         {//ascending
 //          std::cout << "A";
             num_verts_on_level = 0;
-            for( vertex_id_t v = 0; v != G->n; ++v )
+            for( size_t v = 0; v != n; ++v )
             {
                 DIST_TYPE&   distance_v( distance[v] );
                 if( distance_v == INVALID_DISTANCE )
@@ -150,7 +151,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
 
                     for( const vertex_id_t* e = ibegin; e != iend; ++e )
                     {
-                        vertex_id_t     w( *e );
+                        size_t     w( *e );
                         const DIST_TYPE distance_w( distance[w] );
 
                         if( distance_w == current_level )
@@ -188,6 +189,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         return;
     memset( delta, 0, sizeof(DELTA_TYPE)*G->n );
 
+    size_t      n = G->n;
     DIST_TYPE   next_distance = max_distance;
     --max_distance;
     for(;;)
@@ -197,7 +199,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         if( vertex_on_level_count[ next_distance ] <
             vertex_on_level_count[ max_distance ] )
         {
-            for( vertex_id_t w = 0; w != G->n; ++w )
+            for( size_t w = 0; w != n; ++w )
             {
                 if( distance[w] != next_distance )
                 {
@@ -208,7 +210,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
                 for( const vertex_id_t* e = ibegin; e != iend; ++e )
                 {
-                    vertex_id_t v( *e );
+                    size_t v( *e );
                     if( max_distance == distance[v] )
                     {
                         const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
@@ -219,7 +221,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         }
         else
         {
-            for( vertex_id_t v = 0; v != G->n; ++v )
+            for( size_t v = 0; v != n; ++v )
             {
                 if( distance[v] != max_distance )
                 {
@@ -230,7 +232,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
                 for( const vertex_id_t* e = ibegin; e != iend; ++e )
                 {
-                    vertex_id_t w( *e );
+                    size_t w( *e );
 
                     if( distance[w] == next_distance )
                     {
@@ -247,7 +249,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         --next_distance;
     }
 
-    for( vertex_id_t w = 0; w != G->n; ++w )
+    for( size_t w = 0; w != n; ++w )
     {
         if( w != s )
         {
@@ -258,7 +260,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
 void run( graph_t* G, double* result )
 {
-    vertex_id_t                     n = G->n;
+    size_t                          n = G->n;
     std::vector<compute_buffer_t>   buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
@@ -323,7 +325,7 @@ void run( graph_t* G, double* result )
     }
 
     #pragma omp parallel for
-    for( vertex_id_t s = 0; s < n; ++s )
+    for( size_t s = 0; s < n; ++s )
     {
         double  r = 0;
         for( size_t t = 0; t < max_work_threads; ++t )
