@@ -86,13 +86,22 @@ int main(int argc, char **argv)
         MPI_Abort( MPI_COMM_WORLD, rc );
     }
 
-    readGraph(&g, inFilename);
-
     int mpi_size = -1;
     int mpi_rank = -1;
     MPI_Comm_size( MPI_COMM_WORLD, &mpi_size );
     MPI_Comm_rank( MPI_COMM_WORLD, &mpi_rank );
 
+    if( mpi_rank == 0 )
+    {
+        readGraph(&g, inFilename);
+    }
+    else
+    {
+        g.m = 0;
+        g.n = 0;
+        g.rowsIndices = NULL;
+        g.endV = NULL;
+    }
     //printGraph(&g);
     
     alg_time = new double[nIters];

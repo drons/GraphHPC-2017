@@ -1,12 +1,35 @@
-#include <mpi.h>
 #include "solution.h"
 
-void run_mpi( graph_t* G, double* result )
+void run_mpi( graph_t* local_g, double* result )
 {
-    int mpi_size = -1;
-    int mpi_rank = -1;
+    graph_t     storG;
+    graph_t*    G = NULL;
+    int         mpi_size = -1;
+    int         mpi_rank = -1;
+
     MPI_Comm_size( MPI_COMM_WORLD, &mpi_size );
     MPI_Comm_rank( MPI_COMM_WORLD, &mpi_rank );
+
+    if( mpi_rank == 0 )
+    {
+        G = local_g;
+    }
+    else
+    {
+        G = &storG;
+    }
+
+    MPI_Bcast( &G->n, 1, MPI::UNSIGNED, 0, MPI_COMM_WORLD );
+    MPI_Bcast( &G->m, 1, MPI::UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD );
+
+    if( mpi_rank != 0 )
+    {
+        G->endV = new vertex_id_t[ G->m ];
+        G->rowsIndices = new edge_id_t[ G->n + 1 ];
+    }
+
+    MPI_Bcast( G->endV, G->m, MPI::UNSIGNED, 0, MPI_COMM_WORLD );
+    MPI_Bcast( G->rowsIndices, G->n + 1, MPI::UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD );
 
     vertex_id_t                     n = G->n;
     std::vector<compute_buffer_t>   buffers;
@@ -84,4 +107,9 @@ void run_mpi( graph_t* G, double* result )
     }
 
     MPI_Reduce( local_result.data(), result, G->n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD );
+
+    if( mpi_rank != 0 )
+    {
+        freeGraph( G );
+    }
 }

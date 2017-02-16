@@ -1,12 +1,12 @@
 # defines
-CXX=icc
-SPEEDFLAGS=-O3 -Ofast
-CXXFLAGS_MPI=-I/opt/angara64/mpich3/include
-CXXFLAGS= -Wall -openmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS) $(CXXFLAGS_MPI)
-LDFLAGS=-lrt -liomp5 $(CULIBS) $(SPEEDFLAGS)
-LDFLAGS_MPI=-L/opt/angara64/mpich3/lib -lmpich -lmpichcxx
+CXX=mpicxx
+SPEEDFLAGS=-O3
+CXXFLAGS_MPI=-DHAVE_MPI=1
+CXXFLAGS= -Wall -fopenmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS) $(CXXFLAGS_MPI)
+LDFLAGS=-lrt -lgomp $(SPEEDFLAGS)
+#LDFLAGS_MPI=
 
-TARGET = validation gen_RMAT reference solution solution-mpi
+TARGET = solution solution_mpi reference_bfs gen_RMAT gen_random gen_valid_info validation
 
 all: $(TARGET)
 
@@ -15,15 +15,23 @@ solution: main.o solution.o graph_tools.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 # your own implementation
-solution-mpi: main_mpi.o solution.o solution_mpi.o graph_tools.o
+solution_mpi: main_mpi.o solution.o solution_mpi.o graph_tools.o gen_RMAT_mpi.o gen_random_mpi.o
 	$(CXX) $^ -o $@ $(LDFLAGS) $(LDFLAGS_MPI)
 
-# reference implementation
-reference: main.o reference.o graph_tools.o
+# reference implementation with bfs
+reference_bfs: main.o reference_bfs.o graph_tools.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 # RMAT generator
 gen_RMAT: gen_RMAT.o graph_tools.o
+	$(CXX) $^ -o $@ $(LDFLAGS)
+
+# Erdos-Renyi (random) graph generator
+gen_random: gen_random.o graph_tools.o
+	$(CXX) $^ -o $@ $(LDFLAGS)
+
+# gen_valid_info
+gen_valid_info: gen_valid_info.o reference_bfs.o graph_tools.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 # validation

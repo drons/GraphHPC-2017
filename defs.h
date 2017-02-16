@@ -1,6 +1,9 @@
 #ifndef __GRAPH_HPC_DEFS_H
 #define __GRAPH_HPC_DEFS_H
 
+#ifdef HAVE_MPI
+#include <mpi.h>
+#endif // HAVE_MPI
 #include <cstdio>
 #include <stdint.h>
 #include <stdbool.h>
