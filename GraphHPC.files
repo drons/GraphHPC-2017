@@ -10,6 +10,7 @@ reference_bfs.cpp
 solution.h
 solution.cpp
 solution_mpi.cpp
+solution_mpi
 validation.cpp
 start.sh
 contest-run.sh

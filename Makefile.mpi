@@ -16,7 +16,7 @@ solution: main.o solution.o graph_tools.o
 
 # your own implementation
 solution_mpi: main_mpi.o solution.o solution_mpi.o graph_tools.o gen_RMAT_mpi.o gen_random_mpi.o
-	$(CXX) $^ -o $@ $(LDFLAGS) $(LDFLAGS_MPI)
+	$(CXX) $^ -o solution_mpi.bin $(LDFLAGS) $(LDFLAGS_MPI)
 
 # reference implementation with bfs
 reference_bfs: main.o reference_bfs.o graph_tools.o

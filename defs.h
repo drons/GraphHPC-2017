@@ -79,6 +79,7 @@ void freeGraph(graph_t *G);
 
 /* algorithm */
 void run(graph_t *G, double *result);
+void run_mpi(graph_t *G, double *result);
 
 /* generators */
 void gen_RMAT_graph_MPI(graph_t *G);
@@ -88,7 +89,10 @@ void gen_random_graph_MPI(graph_t *G);
 #define DIV_SIZE(v) ((v) / size)
 #define MUL_SIZE(x) ((x) * size)
 
-/* returns number of vertex owner, v - the global vertex number, TotVertices - the global number of vertices, size - the number of processes */
+/* returns number of vertex owner,
+   v - the global vertex number,
+   TotVertices - the global number of vertices,
+   size - the number of processes */
 inline int VERTEX_OWNER(const vertex_id_t v, const vertex_id_t TotVertices, const int size)
 {
     vertex_id_t mod_size = MOD_SIZE(TotVertices);
@@ -104,7 +108,11 @@ inline int VERTEX_OWNER(const vertex_id_t v, const vertex_id_t TotVertices, cons
     }
 }
 
-/* returns local vertex number, v - the global vertex number, TotVertices - the global number of vertices, size - the number of processes, rank - the process number */
+/* returns local vertex number,
+   v - the global vertex number,
+   TotVertices - the global number of vertices,
+   size - the number of processes,
+   rank - the process number */
 inline vertex_id_t VERTEX_LOCAL(const vertex_id_t v, const vertex_id_t TotVertices, const int size, const int rank) 
 {
     if (MOD_SIZE(TotVertices) <= (unsigned int)rank) {
@@ -114,7 +122,11 @@ inline vertex_id_t VERTEX_LOCAL(const vertex_id_t v, const vertex_id_t TotVertic
     }
 }
 
-/* returns global vertex number, v_local - the local vertex number, TotVertices - the global number of vertices, size - the number of processes, rank - the process number */
+/* returns global vertex number,
+   v_local - the local vertex number,
+   TotVertices - the global number of vertices,
+   size - the number of processes,
+   rank - the process number */
 inline vertex_id_t VERTEX_TO_GLOBAL(const vertex_id_t v_local, const vertex_id_t TotVertices, const int size, const int rank)
 {
     if (MOD_SIZE(TotVertices) > (unsigned int)rank) {
