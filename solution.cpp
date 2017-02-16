@@ -293,9 +293,9 @@ void run( graph_t* G, double* result )
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         DIST_TYPE           max_distance = 0;
 
-        std::fill( b.vertex_on_level_count.begin(), b.vertex_on_level_count.end(), 0 );
-        bfs( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.q, b.qnext, b.vertex_on_level_count.data(), b.global_vertex_on_level_count.data(), b.global_unmarked_vertex_count.data(), max_distance );
-        betweenness_centrality( G, rows_indices32.data(), s, b.distance.data(), b.shortest_count.data(), b.vertex_on_level_count.data(), max_distance, b.delta.data(), b.partial_result.data() );
+        std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
+        bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, b.global_vertex_on_level_count, b.global_unmarked_vertex_count, max_distance );
+        betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
 
         vertex_id_t unmarked = G->n;
         for( size_t distance = 0; distance != max_distance; ++distance )
@@ -311,7 +311,7 @@ void run( graph_t* G, double* result )
             t.resize( G );
 //            std::cout << "bfs";
 //            b.dump_bfs_result( s, max_distance );
-            simplified_dijkstra( G, rows_indices32.data(), s, t.distance.data(), t.shortest_count.data(), t.q );
+            simplified_dijkstra( G, rows_indices32.data(), s, t.distance, t.shortest_count, t.q );
 //            std::cout << "simplified_dijkstra";
 //            b.dump_bfs_result( s, max_distance );
             if( !t.is_equal( b ) )
@@ -332,5 +332,11 @@ void run( graph_t* G, double* result )
             r += b.partial_result[s];
         }
         result[s] = r*0.5;
+    }
+
+    for( size_t t = 0; t < max_work_threads; ++t )
+    {
+        compute_buffer_t&   b( buffers[ t ] );
+        b.release();
     }
 }

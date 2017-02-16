@@ -84,22 +84,38 @@ public:
 
 struct compute_buffer_t
 {
-    std::vector<DIST_TYPE>      distance;
-    std::vector<SCOUNT_TYPE>    shortest_count;
-    std::vector<vertex_id_t>    vertex_on_level_count;
-    std::vector<double>         global_vertex_on_level_count;
-    std::vector<double>         global_unmarked_vertex_count;
-    wavefront_t                 q;
-    wavefront_t                 qnext;
-    std::vector<PARTIAL_TYPE>   partial_result;
-    std::vector<DELTA_TYPE>     delta;
+    size_t          size;
+    size_t          mem_align;
+    size_t          max_distance;
+    DIST_TYPE*      distance;
+    SCOUNT_TYPE*    shortest_count;
+    vertex_id_t*    vertex_on_level_count;
+    double*         global_vertex_on_level_count;
+    double*         global_unmarked_vertex_count;
+    PARTIAL_TYPE*   partial_result;
+    DELTA_TYPE*     delta;
+    wavefront_t     q;
+    wavefront_t     qnext;
+
+    compute_buffer_t() :
+        size(0),
+        mem_align( 16 ),
+        distance( NULL ),
+        shortest_count( NULL ),
+        vertex_on_level_count( NULL ),
+        global_vertex_on_level_count( NULL ),
+        global_unmarked_vertex_count( NULL ),
+        partial_result( NULL ),
+        delta( NULL )
+    {
+    }
 
     void dump_bfs_result( vertex_id_t s, vertex_id_t max_distance )
     {
         std::cout << " s = " << s << " ";
 
         std::cout << "d  = { ";
-        for( size_t i = 0; i != distance.size(); ++i )
+        for( size_t i = 0; i != size; ++i )
         {
             if( distance[i] > max_distance + 1 )
             {
@@ -112,7 +128,7 @@ struct compute_buffer_t
         }
         std::cout << "} ";
         std::cout << "sc = { ";
-        for( size_t i = 0; i != shortest_count.size(); ++i )
+        for( size_t i = 0; i != size; ++i )
         {
             std::cout << shortest_count[i] << " ";
         }
@@ -127,7 +143,7 @@ struct compute_buffer_t
 
     bool is_equal( const compute_buffer_t& other )
     {
-        for( size_t i = 0; i != distance.size(); ++i )
+        for( size_t i = 0; i != size; ++i )
         {
             if( distance[i] != other.distance[i] )
             {
@@ -135,7 +151,7 @@ struct compute_buffer_t
                 return false;
             }
         }
-        for( size_t i = 0; i != shortest_count.size(); ++i )
+        for( size_t i = 0; i != size; ++i )
         {
             if( shortest_count[i] != other.shortest_count[i] )
             {
@@ -145,23 +161,43 @@ struct compute_buffer_t
         }
         return true;
     }
-
+#ifndef __USE_ISOC11
+    void* aligned_alloc (size_t __alignment, size_t __size)
+    {
+        void* mem = NULL;
+        posix_memalign( &mem, __alignment, __size );
+        return mem;
+    }
+#endif
     void resize( const graph_t* G )
     {
-        size_t              max_distance( std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n ) );
-        distance.resize( G->n );
-        shortest_count.resize( G->n );
-        vertex_on_level_count.resize( max_distance );
-        global_vertex_on_level_count.resize( max_distance );
-        global_unmarked_vertex_count.resize( max_distance );
+        max_distance = std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n );
+        size = G->n;
+        distance = (DIST_TYPE*)aligned_alloc( mem_align, sizeof( DIST_TYPE )*G->n );
+        shortest_count = (SCOUNT_TYPE*)aligned_alloc( mem_align, sizeof( SCOUNT_TYPE )*G->n );
+        vertex_on_level_count = (vertex_id_t*)aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance );
+        global_vertex_on_level_count = (double*)aligned_alloc( mem_align, sizeof( double )*max_distance );
+        global_unmarked_vertex_count = (double*)aligned_alloc( mem_align, sizeof( double )*max_distance );
+        partial_result = (PARTIAL_TYPE*)aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n );
+        delta = (DELTA_TYPE*)aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n );
+
         q.resize( G->n );
         qnext.resize( G->n );
-        partial_result.resize( G->n );
-        delta.resize( G->n );
 
-        std::fill( global_vertex_on_level_count.begin(), global_vertex_on_level_count.end(), 0 );
-        std::fill( global_unmarked_vertex_count.begin(), global_unmarked_vertex_count.end(), G->n );
-        std::fill( partial_result.begin(), partial_result.end(), 0 );
+        std::fill( global_vertex_on_level_count, global_vertex_on_level_count + max_distance, 0 );
+        std::fill( global_unmarked_vertex_count, global_unmarked_vertex_count + max_distance, G->n );
+        std::fill( partial_result, partial_result + G->n, 0 );
+    }
+
+    void release()
+    {
+        free( distance );
+        free( shortest_count );
+        free( vertex_on_level_count );
+        free( global_vertex_on_level_count );
+        free( global_unmarked_vertex_count );
+        free( partial_result );
+        free( delta );
     }
 };
 
