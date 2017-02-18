@@ -15,7 +15,7 @@ typedef double PARTIAL_TYPE;
 
 #define MEMALIGN    32
 #ifndef __USE_ISOC11
-    void* aligned_alloc (size_t __alignment, size_t __size)
+    inline void* aligned_alloc (size_t __alignment, size_t __size)
     {
         void* mem = NULL;
         posix_memalign( &mem, __alignment, __size );

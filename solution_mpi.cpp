@@ -1,5 +1,29 @@
 #include "solution.h"
 
+vertex_id_t get_local_vert_count( vertex_id_t TotVertices, unsigned size, unsigned rank )
+{
+    vertex_id_t mod_size = MOD_SIZE(TotVertices);
+    vertex_id_t div_size = DIV_SIZE(TotVertices);
+    if (!mod_size) {
+        return div_size;
+    } else {
+        if (rank < mod_size) {
+            return div_size + 1;
+        } else {
+            return div_size;
+        }
+    }
+}
+
+vertex_id_t get_local_part_offset( const vertex_id_t TotVertices, const int size, const int rank)
+{
+    if (MOD_SIZE(TotVertices) > (unsigned int)rank) {
+        return ((DIV_SIZE(TotVertices) + 1) * rank );
+    } else {
+        return (MOD_SIZE(TotVertices) * (DIV_SIZE(TotVertices) + 1) + DIV_SIZE(TotVertices) * (rank - MOD_SIZE(TotVertices)) );
+    }
+}
+
 void run_mpi( graph_t* g_local, double* result )
 {
     graph_t     storG;
@@ -19,6 +43,9 @@ void run_mpi( graph_t* g_local, double* result )
     G->rowsIndices = new edge_id_t[ G->n + 1 ];
 
     vertex_id_t edge_end = 0;
+//    MPI_Barrier(MPI_COMM_WORLD);
+//    double wt( omp_get_wtime() );
+
     for( vertex_id_t v = 0; v < G->n; ++v )
     {
         int             mpi_owner = VERTEX_OWNER( v, G->n, G->nproc );
@@ -51,6 +78,12 @@ void run_mpi( graph_t* g_local, double* result )
 
     G->rowsIndices[G->n] = edge_end;
 
+//    MPI_Barrier(MPI_COMM_WORLD);
+//    if( mpi_rank == 0 )
+//    {
+//        std::cout << "Join time" << omp_get_wtime() - wt << std::endl;
+//    }
+
     /*
     if( mpi_rank == 0 )
     {
@@ -61,7 +94,6 @@ void run_mpi( graph_t* g_local, double* result )
         if( 0 != memcmp( G->rowsIndices, Gt.rowsIndices, sizeof( edge_id_t )*(G->n + 1) ) ||
             0 != memcmp( G->endV, Gt.endV, sizeof( vertex_id_t )*(G->m) ) )
         {
-            //exit(-1);
             std::cout << "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
         }
     }*/
@@ -69,7 +101,7 @@ void run_mpi( graph_t* g_local, double* result )
     vertex_id_t                     n = G->n;
     std::vector<compute_buffer_t>   buffers;
     std::vector<uint32_t>           rows_indices32;
-    size_t                          max_work_threads = omp_get_max_threads();
+    int                             max_work_threads = omp_get_max_threads();
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
@@ -80,15 +112,83 @@ void run_mpi( graph_t* g_local, double* result )
     buffers.resize( max_work_threads );
 
     #pragma omp parallel for
-    for( size_t t = 0; t < max_work_threads; ++t )
+    for( int t = 0; t < max_work_threads; ++t )
     {
         compute_buffer_t&   b( buffers[ t ] );
         b.resize( G );
     }
 
-    vertex_id_t part_size = get_local_n( g_local );
-    vertex_id_t part_begin = VERTEX_TO_GLOBAL( 0, G->n, G->nproc, G->rank );
-    vertex_id_t part_end = std::min( part_begin + part_size, G->n );
+    vertex_id_t     part_size = get_local_n( g_local );
+    vertex_id_t     part_begin = get_local_part_offset( G->n, G->nproc, G->rank );
+    vertex_id_t     part_end = std::min( part_begin + part_size, G->n );
+
+    //try to balance
+    {
+        std::vector<int>    num_threads;
+        int                 total_threads = 0;
+        num_threads.resize( mpi_size );
+
+        MPI_Allgather( &max_work_threads, 1, MPI::INT, num_threads.data(), 1, MPI::INT, MPI_COMM_WORLD );
+        for( size_t i = 0; i != num_threads.size(); ++i )
+            total_threads += num_threads[i];
+
+        if( mpi_rank == 0 )
+        {
+            std::cout << "t = { ";
+            for( size_t i = 0; i != num_threads.size(); ++i )
+            {
+                std::cout << num_threads[i] << " ";
+            }
+            std::cout << "}" << std::endl;
+        }
+        std::vector<int>    tpart_sizes;
+        std::vector<int>    tpart_offsets;
+        std::vector<int>    part_sizes;
+        std::vector<int>    part_offsets;
+        tpart_sizes.resize( total_threads );
+        tpart_offsets.resize( total_threads );
+
+        part_sizes.resize( mpi_size );
+        part_offsets.resize( mpi_size );
+
+        for( size_t i = 0; i != total_threads; ++i )
+        {
+            tpart_sizes[i] = get_local_vert_count( G->n, total_threads, i );
+            tpart_offsets[i] = get_local_part_offset( G->n, G->nproc, G->rank );
+        }
+
+        if( mpi_rank == 0 )
+        {
+            std::cout << "total_threads = " << total_threads << std::endl;
+        }
+
+        size_t ct = 0;
+        size_t off = 0;
+        for( size_t r = 0; r != mpi_size; ++r )
+        {
+            int s = 0;
+            for( size_t t = 0; t != num_threads[r]; ++t )
+            {
+                s += tpart_sizes[ct];
+                ++ct;
+            }
+
+            if( mpi_rank == 0 )
+            {
+                std::cout << " rank = " << r
+                          << " parts = " << s << " x " << get_local_n( g_local )
+                          << " offs = " << off << " x " << get_local_part_offset( G->n, G->nproc, r )
+                          << std::endl;
+            }
+
+            part_sizes[r] = s;
+            part_offsets[r] = off;
+            off += s;
+        }
+        part_size = part_sizes[mpi_rank];
+        part_begin = part_offsets[mpi_rank];
+        part_end = std::min( part_begin + part_size, G->n );
+    }
 /*
     if( mpi_rank == 0 )
     {
@@ -162,7 +262,7 @@ void run_mpi( graph_t* g_local, double* result )
     for( vertex_id_t s = 0; s < n; ++s )
     {
         double  r = 0;
-        for( size_t t = 0; t < max_work_threads; ++t )
+        for( int t = 0; t < max_work_threads; ++t )
         {
             compute_buffer_t&   b( buffers[t] );
             r += b.partial_result[s];
@@ -170,7 +270,7 @@ void run_mpi( graph_t* g_local, double* result )
         local_result[s] = r*0.5;
     }
 
-    for( size_t t = 0; t < max_work_threads; ++t )
+    for( int t = 0; t < max_work_threads; ++t )
     {
         compute_buffer_t&   b( buffers[ t ] );
         b.release();
