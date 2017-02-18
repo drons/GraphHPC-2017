@@ -5,12 +5,23 @@
 
 #include <limits>
 #include <algorithm>
+#include <parallel/algorithm>
 #include <omp.h>
 
 typedef uint8_t DIST_TYPE;
 typedef uint16_t SCOUNT_TYPE;
 typedef double DELTA_TYPE;
 typedef double PARTIAL_TYPE;
+
+#define MEMALIGN    32
+#ifndef __USE_ISOC11
+    void* aligned_alloc (size_t __alignment, size_t __size)
+    {
+        void* mem = NULL;
+        posix_memalign( &mem, __alignment, __size );
+        return mem;
+    }
+#endif
 
 class wavefront_t
 {
@@ -99,7 +110,7 @@ struct compute_buffer_t
 
     compute_buffer_t() :
         size(0),
-        mem_align( 16 ),
+        mem_align( MEMALIGN ),
         distance( NULL ),
         shortest_count( NULL ),
         vertex_on_level_count( NULL ),
@@ -161,14 +172,7 @@ struct compute_buffer_t
         }
         return true;
     }
-#ifndef __USE_ISOC11
-    void* aligned_alloc (size_t __alignment, size_t __size)
-    {
-        void* mem = NULL;
-        posix_memalign( &mem, __alignment, __size );
-        return mem;
-    }
-#endif
+
     void resize( const graph_t* G )
     {
         max_distance = std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n );
@@ -201,6 +205,105 @@ struct compute_buffer_t
     }
 };
 
+struct graph_coo_t
+{
+    struct edge_t
+    {
+        vertex_id_t s,e;
+        edge_t( vertex_id_t _s, vertex_id_t _e ) : s( _s ), e( _e ){}
+    };
+    edge_t*         edges;
+    vertex_id_t     size;
+    graph_coo_t() : edges( NULL ), size( 0 )
+    {
+    }
+    ~graph_coo_t()
+    {
+        release();
+    }
+    void resize( vertex_id_t size )
+    {
+        release();
+        edges = (edge_t*)aligned_alloc( MEMALIGN, sizeof( edge_t )*size );
+    }
+    void release()
+    {
+        free( edges );
+        edges = NULL;
+    }
+    void convert( const graph_t* G )
+    {
+        resize( G->m );
+        vertex_id_t n = 0;
+        for( vertex_id_t v = 0; v != G->n; ++v )
+        {
+            vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+            vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+
+            for( vertex_id_t* e = ibegin; e != iend; ++e )
+            {
+                if( v <= *e )//Only graph half
+                {
+                    edges[n] = edge_t( v, *e );
+                    ++n;
+                }
+            }
+        }
+        size = n;
+    }
+
+    static size_t distance( vertex_id_t v1, vertex_id_t v2 )
+    {
+        if( v1 > v2 )
+            return v1 - v2;
+        else
+            return v2 - v1;
+    }
+
+    static size_t distance( const edge_t& e1, const edge_t& e2 )
+    {
+        return std::min( distance( e1.s, e2.s ), distance( e1.s, e2.e ) ) +
+               std::min( distance( e1.e, e2.s ), distance( e1.e, e2.e ) );
+    }
+
+    struct sorter
+    {
+        edge_t root;
+        sorter( edge_t r ) : root( r ) {}
+        bool operator () ( const edge_t& e1, const edge_t& e2 )
+        {
+            return distance( e1, root ) < distance( e2, root );
+        }
+    };
+
+    double total()
+    {
+        size_t  total_dist = 0;
+        for( size_t e = 0; e != size - 1; ++e )
+        {
+            total_dist += distance( edges[e], edges[e+1] );
+        }
+        return (double)total_dist/(double)size;
+    }
+
+    void reorder()
+    {
+        std::cout << std::endl;
+        std::cout << "Initial mean distance = " << total() << std::endl;
+
+        size_t  block_size = 8*1024;
+        edge_t  root( edges[0] );
+        for( size_t n = 0; n < size; n += block_size )
+        {
+            size_t  ibegin = n;
+            size_t  iend = std::min( n + block_size, (size_t)size );
+            __gnu_parallel::partial_sort( edges + ibegin, edges + iend, edges + size, sorter( root ) );
+            root = edges[iend - 1];
+        }
+        std::cout << "Reordered mean distance = " << total() << std::endl;
+    }
+};
+
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
 void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
@@ -215,4 +318,16 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                              DELTA_TYPE* delta,
                              PARTIAL_TYPE* result );
 
+void bfs( const graph_t* G, const graph_coo_t* C, vertex_id_t start,
+          DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
+          wavefront_t& q, wavefront_t& qnext,
+          vertex_id_t* vertex_on_level_count,
+          const double* global_vertex_on_level_count,
+          const double* global_unmarked_vertex_count, DIST_TYPE& max_distance );
+void betweenness_centrality( const graph_t* G, const graph_coo_t* C, vertex_id_t s,
+                             const DIST_TYPE* distance,
+                             const SCOUNT_TYPE* shortest_count,
+                             vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
+                             DELTA_TYPE* delta,
+                             PARTIAL_TYPE* result );
 #endif // SOLUTION_H
