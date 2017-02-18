@@ -12,7 +12,7 @@ REMOTEPATH=/home/sudorgin/bc
 make clean
 ssh -i "${KEY_FILE}" $REMOTESERVER "rm -r $REMOTEPATH"
 ssh -i "${KEY_FILE}" $REMOTESERVER "install -d $REMOTEPATH" &&
-scp -i "${KEY_FILE}" *.cpp *.h Makefile* *.sh $REMOTESERVER:$REMOTEPATH &&
+scp -i "${KEY_FILE}" solution_mpi *.cpp *.h Makefile* *.sh $REMOTESERVER:$REMOTEPATH &&
 ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make -f Makefile -j6" > /dev/null&&
 ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && make -f Makefile clean" &&
 ssh -i "${KEY_FILE}" $REMOTESERVER "cd $REMOTEPATH && rm Makefile && cp Makefile.mpi Makefile" &&
