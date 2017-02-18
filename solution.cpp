@@ -257,12 +257,98 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     }
 }
 
+struct sorter
+{
+    const graph_t* G;
+    sorter( const graph_t* g ) : G( g ){}
+    bool operator () ( vertex_id_t v, vertex_id_t w ) const
+    {
+        return ( G->rowsIndices[v + 1] - G->rowsIndices[v] ) <
+               ( G->rowsIndices[w + 1] - G->rowsIndices[w] );
+    }
+};
+
+std::vector< vertex_id_t> sort_graph( graph_t* G )
+{
+    std::vector< vertex_id_t>   fmap;
+    std::vector< vertex_id_t>   imap;
+
+    fmap.resize( G->n );
+    imap.resize( G->n );
+
+    for( size_t n = 0; n != G->n; ++n )
+        fmap[n] = n;
+    std::sort( fmap.begin(), fmap.end(), sorter( G ) );
+
+    #pragma omp parallel for
+    for( size_t i = 0; i < G->n; ++i )
+    {
+        vertex_id_t v = fmap[i];
+        imap[v] = i;
+    }
+/*
+    std::cout << "map = { ";
+    for( size_t i = 0; i != G->n; ++i )
+    {
+        std::cout << fmap[i] << " ";
+    }
+    std::cout << "}" << std::endl;
+
+    std::cout << "ecnt = { ";
+    for( size_t i = 0; i != G->n; ++i )
+    {
+        vertex_id_t v = fmap[i];
+        std::cout << G->rowsIndices[v + 1] - G->rowsIndices[v] << " ";
+    }
+    std::cout << "}" << std::endl;
+*/
+    edge_id_t*      new_rows_indices = new edge_id_t[ G->n + 1 ];
+    vertex_id_t*    new_end_v = new vertex_id_t[ G->m ];
+
+    edge_id_t   off = 0;
+    for( vertex_id_t i = 0; i != G->n; ++i )
+    {
+        vertex_id_t     v( fmap[i] );
+        vertex_id_t*    ibegin = G->endV + G->rowsIndices[ v ];
+        vertex_id_t*    iend = G->endV + G->rowsIndices[ v + 1 ];
+        vertex_id_t     sz( iend - ibegin );
+
+        memcpy( new_end_v + off, ibegin, sizeof( vertex_id_t )*sz );
+        new_rows_indices[i] = off;
+        off += sz;
+    }
+    new_rows_indices[G->n] = off;
+
+    #pragma omp parallel for
+    for( vertex_id_t e = 0; e < G->m; ++e )
+    {
+        new_end_v[e] = imap[ new_end_v[e] ];
+    }
+
+    delete [] G->endV;
+    delete [] G->rowsIndices;
+
+    G->endV = new_end_v;
+    G->rowsIndices = new_rows_indices;
+
+    #pragma omp parallel for schedule ( dynamic )
+    for( vertex_id_t v = 0; v < G->n; ++v )
+    {
+        vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+        vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+        std::sort( ibegin, iend, sorter( G ) );
+    }
+
+    return fmap;
+}
+
 void run( graph_t* G, double* result )
 {
     size_t                          n = G->n;
     std::vector<compute_buffer_t>   buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
+    std::vector< vertex_id_t>       map( sort_graph( G ) );
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
@@ -332,7 +418,7 @@ void run( graph_t* G, double* result )
             compute_buffer_t&   b( buffers[ t ] );
             r += b.partial_result[s];
         }
-        result[s] = r*0.5;
+        result[map[s]] = r*0.5;
     }
 
     for( size_t t = 0; t < max_work_threads; ++t )
