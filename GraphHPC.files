@@ -13,7 +13,10 @@ solution_mpi.cpp
 solution_mpi
 validation.cpp
 start.sh
-contest-run.sh
+start-single.sh
+start-cluster.sh
+run-single.sh
+run-cluster.sh
 contest-analize.sh
 Makefile
 Makefile.prof-gen
