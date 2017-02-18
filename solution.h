@@ -12,6 +12,16 @@ typedef uint16_t SCOUNT_TYPE;
 typedef double DELTA_TYPE;
 typedef double PARTIAL_TYPE;
 
+#define MEMALIGN    32
+#ifndef __USE_ISOC11
+    void* aligned_alloc (size_t __alignment, size_t __size)
+    {
+        void* mem = NULL;
+        posix_memalign( &mem, __alignment, __size );
+        return mem;
+    }
+#endif
+
 class wavefront_t
 {
     vertex_id_t     m_n;
@@ -99,7 +109,7 @@ struct compute_buffer_t
 
     compute_buffer_t() :
         size(0),
-        mem_align( 16 ),
+        mem_align( MEMALIGN ),
         distance( NULL ),
         shortest_count( NULL ),
         vertex_on_level_count( NULL ),
@@ -161,14 +171,7 @@ struct compute_buffer_t
         }
         return true;
     }
-#ifndef __USE_ISOC11
-    void* aligned_alloc (size_t __alignment, size_t __size)
-    {
-        void* mem = NULL;
-        posix_memalign( &mem, __alignment, __size );
-        return mem;
-    }
-#endif
+
     void resize( const graph_t* G )
     {
         max_distance = std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n );
@@ -201,14 +204,62 @@ struct compute_buffer_t
     }
 };
 
-void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
+struct graph_coo_t
+{
+    vertex_id_t*    sv;
+    vertex_id_t*    ev;
+    vertex_id_t     size;
+    graph_coo_t() : sv( NULL ), ev( NULL ), size( 0 )
+    {
+    }
+    ~graph_coo_t()
+    {
+        release();
+    }
+    void resize( vertex_id_t size )
+    {
+        sv = (vertex_id_t*)aligned_alloc( MEMALIGN, sizeof( vertex_id_t )*size );
+        ev = (vertex_id_t*)aligned_alloc( MEMALIGN, sizeof( vertex_id_t )*size );
+    }
+    void release()
+    {
+        free( sv );
+        free( ev );
+        sv = NULL;
+        ev = NULL;
+    }
+    void convert( const graph_t* G )
+    {
+        resize( G->m );
+        vertex_id_t n = 0;
+        for( vertex_id_t v = 0; v != G->n; ++v )
+        {
+            vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+            vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+
+            for( vertex_id_t* e = ibegin; e != iend; ++e )
+            {
+                if( v <= *e )//Only graph half
+                {
+                    sv[n] = v;
+                    ev[n] = *e;
+                    ++n;
+                }
+            }
+        }
+        size = n;
+    }
+
+};
+
+void simplified_dijkstra( const graph_t* G, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
+void bfs( const graph_t* G, const graph_coo_t* C, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
           vertex_id_t* vertex_on_level_count,
           const double* global_vertex_on_level_count,
           const double* global_unmarked_vertex_count, DIST_TYPE& max_distance );
-void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
+void betweenness_centrality( const graph_t* G, const graph_coo_t* C, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
