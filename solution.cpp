@@ -121,15 +121,14 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                     for( const vertex_id_t* e = ibegin; e != iend; ++e )
                     {
                         size_t w( *e );
-                        DIST_TYPE&  distance_w(distance[w]);
-                        if( distance_w == INVALID_DISTANCE )
+                        if( distance[w] == INVALID_DISTANCE )
                         {
-                            distance_w = next_level;
+                            distance[w] = next_level;
                             ++num_verts_on_level;
                             shortest_count[w] = shortest_count[v];
                         }
                         else
-                        if( distance_w == next_level )
+                        if( distance[w] == next_level )
                         {
                             shortest_count[w] += shortest_count[v];
                         }
@@ -143,29 +142,29 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
             num_verts_on_level = 0;
             for( size_t v = 0; v != n; ++v )
             {
-                DIST_TYPE&   distance_v( distance[v] );
-                if( distance_v == INVALID_DISTANCE )
+                if( distance[v] == INVALID_DISTANCE )
                 {
-                    const vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                    const vertex_id_t* e = G->endV + row_indites[ v ];
                     const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
 
-                    for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                    for( ; e < iend; ++e )
                     {
                         size_t     w( *e );
-                        const DIST_TYPE distance_w( distance[w] );
-
-                        if( distance_w == current_level )
+                        if( distance[w] == current_level )
                         {
-                            if( distance_v == INVALID_DISTANCE )
-                            {
-                                distance_v = next_level;
-                                shortest_count[v] = shortest_count[w];
-                                ++num_verts_on_level;
-                            }
-                            else
-                            {
-                                shortest_count[v] += shortest_count[w];
-                            }
+                            distance[v] = next_level;
+                            shortest_count[v] = shortest_count[w];
+                            ++num_verts_on_level;
+                            break;
+                        }
+                    }
+                    ++e;
+                    for( ; e < iend; ++e )
+                    {
+                        size_t     w( *e );
+                        if( distance[w] == current_level )
+                        {
+                            shortest_count[v] += shortest_count[w];
                         }
                     }
                 }
