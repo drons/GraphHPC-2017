@@ -8,6 +8,8 @@
 #include <parallel/algorithm>
 #include <omp.h>
 
+#define INVALID_DISTANCE 255
+
 typedef uint8_t DIST_TYPE;
 typedef uint16_t SCOUNT_TYPE;
 typedef double DELTA_TYPE;
@@ -29,6 +31,9 @@ class wavefront_t
     vertex_id_t*    m_p;
     vertex_id_t*    m_front;
     vertex_id_t*    m_back;
+private:
+	wavefront_t( const wavefront_t& );
+	wavefront_t& operator = ( const wavefront_t& );
 public:
     wavefront_t()
     {
@@ -39,13 +44,14 @@ public:
     }
     ~wavefront_t()
     {
-        free( m_p );
     }
     void resize( vertex_id_t n )
     {
         m_n = n;
         if( m_p != NULL )
+        {
             free( m_p );
+        }
         m_p = (vertex_id_t*)malloc( n*sizeof( vertex_id_t ) );
         m_front = m_p;
         m_back = m_p;
@@ -91,10 +97,25 @@ public:
     {
         return m_back - m_front;
     }
+    void release()
+    {
+        if( m_p != NULL )
+        {
+            free( m_p );
+        }
+        m_n = 0;
+        m_p = NULL;
+        m_front = NULL;
+        m_back = NULL;
+    }
 };
 
 struct compute_buffer_t
 {
+private:
+	compute_buffer_t( const compute_buffer_t& );
+	compute_buffer_t& operator = ( const compute_buffer_t& );
+public:
     size_t          size;
     size_t          mem_align;
     size_t          max_distance;
@@ -134,14 +155,14 @@ struct compute_buffer_t
             }
             else
             {
-                std::cout << distance[i] << " ";
+                std::cout << (int)distance[i] << " ";
             }
         }
         std::cout << "} ";
         std::cout << "sc = { ";
         for( size_t i = 0; i != size; ++i )
         {
-            std::cout << shortest_count[i] << " ";
+            std::cout << (int)shortest_count[i] << " ";
         }
         std::cout << "} ";
         std::cout << "vc = { ";
@@ -158,7 +179,7 @@ struct compute_buffer_t
         {
             if( distance[i] != other.distance[i] )
             {
-                std::cout << " distance[i] != other.distance[i] " << "i = " << i << " " << distance[i] << " " << other.distance[i] << std::endl;
+                std::cout << " distance[i] != other.distance[i] " << "i = " << i << " " << (int)distance[i] << " " << (int)other.distance[i] << std::endl;
                 return false;
             }
         }
@@ -202,6 +223,9 @@ struct compute_buffer_t
         free( global_unmarked_vertex_count );
         free( partial_result );
         free( delta );
+
+		q.release();
+		qnext.release();
     }
 };
 

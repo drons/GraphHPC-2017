@@ -4,10 +4,10 @@
 #include <emmintrin.h>
 #include <smmintrin.h>
 
+//#define DEBUG 1
+
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
 {
-    static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
-
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
     memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
 
@@ -56,8 +56,6 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           const double* global_vertex_on_level_count,
           const double* global_unmarked_vertex_count, DIST_TYPE& max_distance )
 {
-    static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
-
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
     memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
 
@@ -240,6 +238,12 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     --max_distance;
     for(;;)
     {
+#ifdef DEBUG
+        assert( vertex_on_level_count[ max_distance ] ==
+                std::count( distance, distance + n, max_distance ) );
+        assert( vertex_on_level_count[ next_distance ] ==
+                std::count( distance, distance + n, next_distance ) );
+#endif //DEBUG
         if( vertex_on_level_count[ next_distance ] <
             vertex_on_level_count[ max_distance ] )
         {
@@ -461,10 +465,10 @@ std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
 void run( graph_t* G, double* result )
 {
     size_t                          n = G->n;
-    std::vector<compute_buffer_t>   buffers;
+    compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, +1 ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, 0 ) );
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
@@ -472,7 +476,7 @@ void run( graph_t* G, double* result )
         rows_indices32[n] = G->rowsIndices[n];
     }
 
-    buffers.resize( omp_get_max_threads() );
+    buffers = new compute_buffer_t[max_work_threads];
 
     #pragma omp parallel for
     for( size_t t = 0; t < max_work_threads; ++t )
@@ -508,21 +512,26 @@ void run( graph_t* G, double* result )
             b.global_unmarked_vertex_count[distance] += unmarked;
         }
 
-        if(0)
+#ifdef DEBUG
+        if(1)
         {
             compute_buffer_t    t;
             t.resize( G );
-//            std::cout << "bfs";
-//            b.dump_bfs_result( s, max_distance );
+
             simplified_dijkstra( G, rows_indices32.data(), s, t.distance, t.shortest_count, t.q );
-//            std::cout << "simplified_dijkstra";
-//            b.dump_bfs_result( s, max_distance );
+            #pragma omp critical
             if( !t.is_equal( b ) )
             {
-                std::cout << "s = " << s;
+                std::cout << "s = " << s << std::endl;
+                std::cout << "bfs";
+                b.dump_bfs_result( s, max_distance );
+                std::cout << "dij";
+                t.dump_bfs_result( s, max_distance );
                 exit( -1 );
             }
+            t.release();
         }
+#endif //DEBUG
     }
 
     #pragma omp parallel for
@@ -531,7 +540,7 @@ void run( graph_t* G, double* result )
         double  r = 0;
         for( size_t t = 0; t < max_work_threads; ++t )
         {
-            compute_buffer_t&   b( buffers[ t ] );
+            const compute_buffer_t&   b( buffers[ t ] );
             r += b.partial_result[s];
         }
         result[map[s]] = r*0.5;
@@ -542,4 +551,5 @@ void run( graph_t* G, double* result )
         compute_buffer_t&   b( buffers[ t ] );
         b.release();
     }
+    delete [] buffers;
 }
