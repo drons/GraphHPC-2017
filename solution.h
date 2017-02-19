@@ -330,4 +330,7 @@ void betweenness_centrality( const graph_t* G, const graph_coo_t* C, vertex_id_t
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
                              DELTA_TYPE* delta,
                              PARTIAL_TYPE* result );
+
+std::vector< vertex_id_t> sort_graph( graph_t* G, int order );
+
 #endif // SOLUTION_H

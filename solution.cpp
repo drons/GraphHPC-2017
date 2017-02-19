@@ -342,10 +342,10 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     }
 }
 
-struct sorter
+struct sorter_a
 {
     const graph_t* G;
-    sorter( const graph_t* g ) : G( g ){}
+    sorter_a( const graph_t* g ) : G( g ){}
     bool operator () ( vertex_id_t v, vertex_id_t w ) const
     {
         return ( G->rowsIndices[v + 1] - G->rowsIndices[v] ) <
@@ -353,7 +353,18 @@ struct sorter
     }
 };
 
-std::vector< vertex_id_t> sort_graph( graph_t* G )
+struct sorter_d
+{
+    const graph_t* G;
+    sorter_d( const graph_t* g ) : G( g ){}
+    bool operator () ( vertex_id_t v, vertex_id_t w ) const
+    {
+        return ( G->rowsIndices[v + 1] - G->rowsIndices[v] ) >
+               ( G->rowsIndices[w + 1] - G->rowsIndices[w] );
+    }
+};
+
+std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
 {
     std::vector< vertex_id_t>   fmap;
     std::vector< vertex_id_t>   imap;
@@ -363,7 +374,20 @@ std::vector< vertex_id_t> sort_graph( graph_t* G )
 
     for( size_t n = 0; n != G->n; ++n )
         fmap[n] = n;
-    std::sort( fmap.begin(), fmap.end(), sorter( G ) );
+
+    if( order == 0 )
+    {
+        return fmap;
+    }
+
+    if( order > 0 )
+    {
+        std::sort( fmap.begin(), fmap.end(), sorter_a( G ) );
+    }
+    else
+    {
+        std::sort( fmap.begin(), fmap.end(), sorter_d( G ) );
+    }
 
     #pragma omp parallel for
     for( size_t i = 0; i < G->n; ++i )
@@ -421,7 +445,14 @@ std::vector< vertex_id_t> sort_graph( graph_t* G )
     {
         vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
         vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
-        std::sort( ibegin, iend, sorter( G ) );
+        if( order > 0 )
+        {
+            std::sort( ibegin, iend, sorter_a( G ) );
+        }
+        else
+        {
+            std::sort( ibegin, iend, sorter_d( G ) );
+        }
     }
 
     return fmap;
@@ -433,7 +464,7 @@ void run( graph_t* G, double* result )
     std::vector<compute_buffer_t>   buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, +1 ) );
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
