@@ -93,7 +93,7 @@ int main(int argc, char **argv)
         
         delete[] result;
         
-        return 0;
+        return 1;
     }
     
     /* comparison the result with right answer */
@@ -106,7 +106,7 @@ int main(int argc, char **argv)
             
             delete[] result;
             
-            return 0;
+            return 2;
         }
     }
     

@@ -3,7 +3,7 @@
 using namespace std;
 
 /* Max. number of vertices of the graph */
-#define N 4096
+#define N (4096*4)
 
 /* bfs from the vertex start_v */
 void bfs(graph_t *G, vertex_id_t start_v, unsigned **shortest_path, unsigned **shortest_paths_cnt)
@@ -69,11 +69,13 @@ void run(graph_t *G, double *result)
     }
     
     /* bfs for calculating shortest_path and shortest_paths_cnt for all pairs of vertices */
+    #pragma omp parallel for
     for (vertex_id_t i = 0; i < n; i++) {
         bfs(G, i, shortest_path, shortest_paths_cnt);
     }
     
     /* main part */
+    #pragma omp parallel for
     for (vertex_id_t u = 0; u < n; u++) {
         result[u] = 0;
         for (vertex_id_t i = 0; i < n; i++) {
