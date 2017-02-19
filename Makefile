@@ -1,13 +1,14 @@
 # defines
-CXX=icc
+CXX=g++
+SPEEDFLAGS=-O3 -ffast-math -msse4.2
+CXXFLAGS=-Wall -fopenmp $(SPEEDFLAGS)
+LDFLAGS=-lrt -lgomp $(SPEEDFLAGS)
 
-#-xCORE-AVX2 -mtune=core-avx2
-SPEEDFLAGS=-O3 -Ofast
-#PROFGENFLAGS=-prof-gen=threadsafe -prof-dir=./
-#PROFUSEFLAGS=-prof-use -prof-dir=./
-#-debug inline-debug-info
-CXXFLAGS= -Wall -qopenmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS)
-LDFLAGS=-lrt -liomp5 $(CULIBS) $(SPEEDFLAGS)
+#CXX=icc
+##-xCORE-AVX2 -mtune=core-avx2
+#SPEEDFLAGS=-O3 -Ofast
+#CXXFLAGS= -Wall -qopenmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS)
+#LDFLAGS=-lrt -liomp5 $(CULIBS) $(SPEEDFLAGS)
 
 TARGET = solution reference_bfs gen_RMAT gen_random gen_valid_info validation
 

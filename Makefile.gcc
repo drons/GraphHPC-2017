@@ -1,6 +1,6 @@
 # defines
 CXX=g++
-SPEEDFLAGS=-O3
+SPEEDFLAGS=-O3 -mavx
 CXXFLAGS=-Wall -std=c++11 -fopenmp $(SPEEDFLAGS)
 LDFLAGS=-lrt -lgomp $(SPEEDFLAGS)
 

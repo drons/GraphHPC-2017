@@ -1,5 +1,9 @@
 #include "solution.h"
 
+#include <mmintrin.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
+
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
 {
     static const DIST_TYPE      INVALID_DISTANCE = std::numeric_limits<DIST_TYPE>::max();
@@ -42,6 +46,9 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
+#define UNROLL 16
+//int vector_hit_count = 0;
+//int scalar_hit_count = 0;
 void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
@@ -108,29 +115,48 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         if( global_vertex_on_level_count[current_level] <
             global_unmarked_vertex_count[current_level] )
         {//descending
-//          std::cout << "D";
             num_verts_on_level = 0;
-            for( size_t v = 0; v != n; ++v )
+#ifdef UNROLL
+            __m128i current_level16( _mm_set1_epi8( current_level ) );
+            for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                const DIST_TYPE   distance_v( distance[v] );
-                if( distance_v == current_level )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
+                __m128i comp( _mm_cmpeq_epi8( current_level16, distance_v16 ) );    //compare
+                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
-                    const vertex_id_t* ibegin = G->endV + row_indites[ v ];
-                    const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+                    continue;
+                }
 
-                    for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b, comp );
+                for( size_t u = 0; u < UNROLL; ++u )
+                {
+                    size_t v = vu + u;
+                    if( b[u] )
+#else
+            {
+                for( size_t v = 0; v < n; ++v )
+                {
+                    if( distance[v] == current_level )
+#endif
                     {
-                        size_t w( *e );
-                        if( distance[w] == INVALID_DISTANCE )
+                        const vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                        const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                        for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
-                            distance[w] = next_level;
-                            ++num_verts_on_level;
-                            shortest_count[w] = shortest_count[v];
-                        }
-                        else
-                        if( distance[w] == next_level )
-                        {
-                            shortest_count[w] += shortest_count[v];
+                            size_t w( *e );
+                            if( distance[w] == INVALID_DISTANCE )
+                            {
+                                distance[w] = next_level;
+                                ++num_verts_on_level;
+                                shortest_count[w] = shortest_count[v];
+                            }
+                            else
+                            if( distance[w] == next_level )
+                            {
+                                shortest_count[w] += shortest_count[v];
+                            }
                         }
                     }
                 }
@@ -138,33 +164,53 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         }
         else
         {//ascending
-//          std::cout << "A";
             num_verts_on_level = 0;
-            for( size_t v = 0; v != n; ++v )
+#ifdef UNROLL
+            __m128i invalid_distance16( _mm_set1_epi8( INVALID_DISTANCE ) );
+            for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                if( distance[v] == INVALID_DISTANCE )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
+                __m128i comp( _mm_cmpeq_epi8( invalid_distance16, distance_v16 ) );    //compare
+                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
-                    const vertex_id_t* e = G->endV + row_indites[ v ];
-                    const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+                    continue;
+                }
 
-                    for( ; e < iend; ++e )
+                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b, comp );
+                for( size_t u = 0; u < UNROLL; ++u )
+                {
+                    size_t v = vu + u;
+                    if( b[u] )
+#else
+            {
+                for( size_t v = 0; v < n; ++v )
+                {
+                    if( distance[v] == INVALID_DISTANCE )
+#endif
                     {
-                        size_t     w( *e );
-                        if( distance[w] == current_level )
+                        const vertex_id_t* e = G->endV + row_indites[ v ];
+                        const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                        for( ; e < iend; ++e )
                         {
-                            distance[v] = next_level;
-                            shortest_count[v] = shortest_count[w];
-                            ++num_verts_on_level;
-                            break;
+                            size_t     w( *e );
+                            if( distance[w] == current_level )
+                            {
+                                distance[v] = next_level;
+                                shortest_count[v] = shortest_count[w];
+                                ++num_verts_on_level;
+                                break;
+                            }
                         }
-                    }
-                    ++e;
-                    for( ; e < iend; ++e )
-                    {
-                        size_t     w( *e );
-                        if( distance[w] == current_level )
+                        ++e;
+                        for( ; e < iend; ++e )
                         {
-                            shortest_count[v] += shortest_count[w];
+                            size_t     w( *e );
+                            if( distance[w] == current_level )
+                            {
+                                shortest_count[v] += shortest_count[w];
+                            }
                         }
                     }
                 }
@@ -176,6 +222,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
     }
     max_distance = current_level;
 }
+
 
 void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
@@ -193,49 +240,87 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     --max_distance;
     for(;;)
     {
-//        std::cout << "level = " << max_distance << " " << vertex_on_level_count[ max_distance + 1 ]
-//                  << " " << vertex_on_level_count[ max_distance ] << std::endl;
         if( vertex_on_level_count[ next_distance ] <
             vertex_on_level_count[ max_distance ] )
         {
-            for( size_t w = 0; w != n; ++w )
+#ifdef UNROLL
+            __m128i next_distance16( _mm_set1_epi8( next_distance ) );
+            for( size_t wu = 0; wu < n; wu += UNROLL )
             {
-                if( distance[w] != next_distance )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + wu) ) );//load from mem
+                __m128i comp( _mm_cmpeq_epi8( next_distance16, distance_v16 ) );    //compare
+                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
-                const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
-                const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
 
-                for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b, comp );
+                for( size_t u = 0; u < UNROLL; ++u )
                 {
-                    size_t v( *e );
-                    if( max_distance == distance[v] )
+                    size_t w = wu + u;
+                    if( b[u] )
+#else
+            {
+                for( size_t w = 0; w < n; ++w )
+                {
+                    if( distance[w] == next_distance )
+#endif
                     {
-                        const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
-                        delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
+                        const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
+                        const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
+
+                        for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                        {
+                            size_t v( *e );
+                            if( max_distance == distance[v] )
+                            {
+                                const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
+                                delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
+                            }
+                        }
                     }
                 }
             }
         }
         else
         {
-            for( size_t v = 0; v != n; ++v )
+#ifdef UNROLL
+            __m128i max_distance16( _mm_set1_epi8( max_distance ) );
+            for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                if( distance[v] != max_distance )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
+                __m128i comp( _mm_cmpeq_epi8( max_distance16, distance_v16 ) );    //compare
+                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
-                const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
-                const vertex_id_t*  iend = G->endV + row_indites[ v + 1 ];
 
-                for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b, comp );
+                for( size_t u = 0; u < UNROLL; ++u )
                 {
-                    size_t w( *e );
-
-                    if( distance[w] == next_distance )
+                    size_t v = vu + u;
+                    if( b[u] )
+#else
+            {
+                for( size_t v = 0; v < n; ++v )
+                {
+                    if( distance[v] == max_distance )
+#endif
                     {
-                        delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
+                        const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
+                        const vertex_id_t*  iend = G->endV + row_indites[ v + 1 ];
+
+                        for( const vertex_id_t* e = ibegin; e != iend; ++e )
+                        {
+                            size_t w( *e );
+
+                            if( distance[w] == next_distance )
+                            {
+                                delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
+                            }
+                        }
                     }
                 }
             }
