@@ -99,7 +99,7 @@ void run_mpi( graph_t* g_local, double* result )
     }*/
 
     vertex_id_t                     n = G->n;
-    std::vector<compute_buffer_t>   buffers;
+    compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     int                             max_work_threads = omp_get_max_threads();
     std::vector< vertex_id_t>       map( sort_graph( G, 0 ) );
@@ -110,7 +110,7 @@ void run_mpi( graph_t* g_local, double* result )
         rows_indices32[n] = G->rowsIndices[n];
     }
 
-    buffers.resize( max_work_threads );
+    buffers = new compute_buffer_t[ max_work_threads ];
 
     #pragma omp parallel for
     for( int t = 0; t < max_work_threads; ++t )
@@ -286,4 +286,5 @@ void run_mpi( graph_t* g_local, double* result )
     MPI_Reduce_scatter( local_result.data(), result, num_vert.data(), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD );
 
     freeGraph( G );
+    delete [] buffers;
 }
