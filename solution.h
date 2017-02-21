@@ -328,7 +328,7 @@ struct graph_coo_t
     }
 };
 
-void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
+void simplified_dijkstra( const graph_t* G, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
 void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
