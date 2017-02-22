@@ -219,7 +219,15 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         vertex_on_level_count[current_level] = num_verts_on_level;
         processed_vertites_count += num_verts_on_level;
     }
-    max_distance = current_level;
+
+    if( current_level > 0 )
+    {
+        max_distance = current_level - 1;
+    }
+    else
+    {
+        max_distance = 0;
+    }
 }
 
 
