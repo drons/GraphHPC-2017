@@ -380,23 +380,23 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
     for( size_t n = 0; n != G->n; ++n )
         fmap[n] = n;
 
-    if( order == 0 )
-    {
-        return fmap;
-    }
 
     graph_t*    Gwork;
     if( G == Gnew )
     {
-       Gwork = new graph_t;
-       Gwork->n = G->n;
-       Gwork->m = G->m;
-       Gwork->local_m = G->local_m;
-       Gwork->local_n = G->local_n;
-       Gwork->nproc = G->nproc;
-       Gwork->rank = G->rank;
-       Gwork->rowsIndices = new edge_id_t[ Gwork->n + 1 ];
-       Gwork->endV = new vertex_id_t[ Gwork->m ];
+        if( order == 0 )
+        {
+            return fmap;
+        }
+        Gwork = new graph_t;
+        Gwork->n = G->n;
+        Gwork->m = G->m;
+        Gwork->local_m = G->local_m;
+        Gwork->local_n = G->local_n;
+        Gwork->nproc = G->nproc;
+        Gwork->rank = G->rank;
+        Gwork->rowsIndices = new edge_id_t[ Gwork->n + 1 ];
+        Gwork->endV = new vertex_id_t[ Gwork->m ];
     }
     else
     {
@@ -409,6 +409,13 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
         Gwork->rank = G->rank;
         Gwork->rowsIndices = new edge_id_t[ Gwork->n + 1 ];
         Gwork->endV = new vertex_id_t[ Gwork->m ];
+
+        if( order == 0 )
+        {
+            memcpy( Gwork->rowsIndices, G->rowsIndices, sizeof(edge_id_t)*(Gwork->n + 1) );
+            memcpy( Gwork->endV, G->endV, sizeof(vertex_id_t)*(Gwork->m) );
+            return fmap;
+        }
     }
 
     if( order > 0 )
@@ -416,6 +423,7 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
         std::sort( fmap.begin(), fmap.end(), sorter_a( Gwork ) );
     }
     else
+    if( order < 0 )
     {
         std::sort( fmap.begin(), fmap.end(), sorter_d( Gwork ) );
     }
@@ -473,6 +481,7 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
             std::sort( ibegin, iend, sorter_a( Gwork ) );
         }
         else
+        if( order < 0 )
         {
             std::sort( ibegin, iend, sorter_d( Gwork ) );
         }
