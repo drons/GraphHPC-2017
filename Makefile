@@ -9,7 +9,7 @@ SPEEDFLAGS=-O3 -Ofast
 #PROFGENFLAGS=-prof-gen=threadsafe -prof-dir=./
 #PROFUSEFLAGS=-prof-use -prof-dir=./
 CXXFLAGS=-Wall -qopenmp $(SPEEDFLAGS) $(PROFGENFLAGS) $(PROFUSEFLAGS)
-LDFLAGS=-lrt -liomp5 $(SPEEDFLAGS)
+LDFLAGS=-lrt -liomp5 -lnuma $(SPEEDFLAGS)
 
 TARGET = solution reference_bfs gen_RMAT gen_random gen_valid_info validation
 

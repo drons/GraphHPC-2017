@@ -6,7 +6,7 @@
 
 //#define DEBUG 1
 
-void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
+void simplified_dijkstra( const graph_t* G, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue )
 {
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
     memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
@@ -24,8 +24,8 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
 
         queue.pop_front();
 
-        vertex_id_t* ibegin = G->endV + row_indites[ v ];
-        vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+        vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+        vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
 
         for( vertex_id_t* e = ibegin; e != iend; ++e )
         {
@@ -49,7 +49,7 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
 #define UNROLL 16
 //int vector_hit_count = 0;
 //int scalar_hit_count = 0;
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
+void bfs( const graph_csr_t* const G, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
           vertex_id_t* vertex_on_level_count,
@@ -80,8 +80,8 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         for( const vertex_id_t* ii = q.rbegin(); ii != rend; --ii )
         {
             size_t  v = *ii;
-            vertex_id_t* ibegin = G->endV + row_indites[ v ];
-            vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+            vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+            vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
 
             for( vertex_id_t* e = ibegin; e != iend; ++e )
             {
@@ -138,8 +138,8 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                     if( distance[v] == current_level )
 #endif
                     {
-                        const vertex_id_t* ibegin = G->endV + row_indites[ v ];
-                        const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+                        const vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+                        const vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
 
                         for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
@@ -187,8 +187,8 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                     if( distance[v] == INVALID_DISTANCE )
 #endif
                     {
-                        const vertex_id_t* e = G->endV + row_indites[ v ];
-                        const vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+                        const vertex_id_t* e = G->endV + G->rowsIndices[ v ];
+                        const vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
 
                         for( ; e < iend; ++e )
                         {
@@ -223,7 +223,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
 }
 
 
-void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
+void betweenness_centrality( const graph_csr_t* const G, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
@@ -272,8 +272,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                     if( distance[w] == next_distance )
 #endif
                     {
-                        const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
-                        const vertex_id_t*  iend = G->endV + row_indites[ w + 1 ];
+                        const vertex_id_t*  ibegin = G->endV + G->rowsIndices[ w ];
+                        const vertex_id_t*  iend = G->endV + G->rowsIndices[ w + 1 ];
 
                         for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
@@ -314,8 +314,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                     if( distance[v] == max_distance )
 #endif
                     {
-                        const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
-                        const vertex_id_t*  iend = G->endV + row_indites[ v + 1 ];
+                        const vertex_id_t*  ibegin = G->endV + G->rowsIndices[ v ];
+                        const vertex_id_t*  iend = G->endV + G->rowsIndices[ v + 1 ];
 
                         for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
@@ -503,31 +503,34 @@ void run( graph_t* G, double* result )
     graph_t                         storG;
     graph_t*                        Gwork = &storG;
     compute_buffer_t*               buffers;
-    std::vector<uint32_t>           rows_indices32;
+    graph_csr_t*                    gnode;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, Gwork, -1 ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, Gwork, 0 ) );
     size_t                          n = Gwork->n;
-
-    rows_indices32.resize( Gwork->n + 1 );
-    for( size_t n = 0; n < Gwork->n + 1; ++n )
-    {
-        rows_indices32[n] = Gwork->rowsIndices[n];
-    }
 
     buffers = new compute_buffer_t[max_work_threads];
 
-    #pragma omp parallel for
     for( size_t t = 0; t < max_work_threads; ++t )
     {
-        compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
-        b.resize( Gwork );
+        compute_buffer_t&   b( buffers[ t ] );
+        int                 node( numa_node_of_cpu( t ) );
+        b.resize( Gwork, node );
     }
+
+    gnode = new graph_csr_t[ numa_num_configured_nodes() ];
+
+    for( int node = 0; node != numa_num_configured_nodes(); ++node )
+    {
+        gnode[node].convert( Gwork, node );
+    }
+
 
 //    std::cout << "omp_get_num_procs   " << omp_get_num_procs() << std::endl;
 //    std::cout << "omp_get_num_threads " << omp_get_num_threads() << std::endl;
 //    std::cout << "omp_get_max_threads " << omp_get_max_threads() << std::endl;
 //    std::cout << "omp_get_num_teams   " << omp_get_num_teams() << std::endl;
 //    std::cout << "omp_get_team_num    " << omp_get_team_num() << std::endl;
+//    std::cout << "numa_num_configured_nodes" << numa_num_configured_nodes() << std::endl;
 
 #ifdef MAXNODES
     n = MAXNODES;
@@ -536,19 +539,20 @@ void run( graph_t* G, double* result )
     for( vertex_id_t s = 0; s < n; ++s )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
+        const graph_csr_t&  g( gnode[ numa_node_of_cpu( omp_get_thread_num() ) ] );
         DIST_TYPE           max_distance = 0;
 
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
-        bfs( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
-        betweenness_centrality( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
+        bfs( &g, s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
+        betweenness_centrality( &g, s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
 
 #ifdef DEBUG
         if(1)
         {
             compute_buffer_t    t;
-            t.resize( G );
+            t.resize( Gwork, 0 );
 
-            simplified_dijkstra( G, rows_indices32.data(), s, t.distance, t.shortest_count, t.q );
+            simplified_dijkstra( Gwork, s, t.distance, t.shortest_count, t.q );
             #pragma omp critical
             if( !t.is_equal( b ) )
             {
@@ -563,7 +567,7 @@ void run( graph_t* G, double* result )
         }
 #endif //DEBUG
     }
-
+    freeGraph( Gwork );
     #pragma omp parallel for
     for( size_t s = 0; s < n; ++s )
     {
@@ -582,5 +586,10 @@ void run( graph_t* G, double* result )
         b.release();
     }
     delete [] buffers;
-    freeGraph( Gwork );
+
+    for( int node = 0; node != numa_num_configured_nodes(); ++node )
+    {
+        gnode[node].release();
+    }
+    delete [] gnode;
 }

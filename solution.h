@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <parallel/algorithm>
 #include <omp.h>
+#include <numa.h>
 
 #define INVALID_DISTANCE 255
 
@@ -15,15 +16,31 @@ typedef uint16_t SCOUNT_TYPE;
 typedef double DELTA_TYPE;
 typedef double PARTIAL_TYPE;
 
+#define DD(x,d) ((d)*(1+((x)-1)/(d)))
+
 #define MEMALIGN    32
-#ifndef __USE_ISOC11
-    inline void* aligned_alloc (size_t __alignment, size_t __size)
+inline void* numa_aligned_alloc( size_t alig, size_t sz, int node )
+{
+    size_t      allocated_size = sz + 2*alig + 2*sizeof( uint64_t );
+    char*       mem = (char*)numa_alloc_onnode( allocated_size, node );
+    char*       alig_mem = (char*)DD( (size_t)(mem + alig), alig );
+
+    ((uint64_t*)alig_mem)[-1] = allocated_size;
+    ((uint64_t*)alig_mem)[-2] = (uint64_t)mem;
+    return alig_mem;
+}
+
+inline void numa_aligned_free( void* alig_mem )
+{
+    if( alig_mem == NULL )
     {
-        void* mem = NULL;
-        posix_memalign( &mem, __alignment, __size );
-        return mem;
+        return;
     }
-#endif
+    size_t  allocated_size = ((uint64_t*)alig_mem)[-1];
+    void*   mem = (void*)((uint64_t*)alig_mem)[-2];
+
+    numa_free( mem, allocated_size );
+}
 
 class wavefront_t
 {
@@ -45,14 +62,14 @@ public:
     ~wavefront_t()
     {
     }
-    void resize( vertex_id_t n )
+    void resize( vertex_id_t n, int node )
     {
         m_n = n;
         if( m_p != NULL )
         {
-            free( m_p );
+            numa_aligned_free( m_p );
         }
-        m_p = (vertex_id_t*)malloc( n*sizeof( vertex_id_t ) );
+        m_p = (vertex_id_t*)numa_aligned_alloc( MEMALIGN, n*sizeof( vertex_id_t ), node );
         m_front = m_p;
         m_back = m_p;
     }
@@ -101,7 +118,7 @@ public:
     {
         if( m_p != NULL )
         {
-            free( m_p );
+            numa_aligned_free( m_p );
         }
         m_n = 0;
         m_p = NULL;
@@ -190,32 +207,90 @@ public:
         return true;
     }
 
-    void resize( const graph_t* G )
+    void resize( const graph_t* G, int node )
     {
         max_distance = std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n );
         size = G->n;
-        distance = (DIST_TYPE*)aligned_alloc( mem_align, sizeof( DIST_TYPE )*G->n );
-        shortest_count = (SCOUNT_TYPE*)aligned_alloc( mem_align, sizeof( SCOUNT_TYPE )*G->n );
-        vertex_on_level_count = (vertex_id_t*)aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance );
-        partial_result = (PARTIAL_TYPE*)aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n );
-        delta = (DELTA_TYPE*)aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n );
+        distance = (DIST_TYPE*)numa_aligned_alloc( mem_align, sizeof( DIST_TYPE )*G->n, node );
+        shortest_count = (SCOUNT_TYPE*)numa_aligned_alloc( mem_align, sizeof( SCOUNT_TYPE )*G->n, node );
+        vertex_on_level_count = (vertex_id_t*)numa_aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance, node );
+        partial_result = (PARTIAL_TYPE*)numa_aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n, node );
+        delta = (DELTA_TYPE*)numa_aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n, node );
 
-        q.resize( G->n );
-        qnext.resize( G->n );
+        q.resize( G->n, node );
+        qnext.resize( G->n, node );
 
         std::fill( partial_result, partial_result + G->n, 0 );
     }
 
     void release()
     {
-        free( distance );
-        free( shortest_count );
-        free( vertex_on_level_count );
-        free( partial_result );
-        free( delta );
+        numa_aligned_free( distance );
+        numa_aligned_free( shortest_count );
+        numa_aligned_free( vertex_on_level_count );
+        numa_aligned_free( partial_result );
+        numa_aligned_free( delta );
 
 		q.release();
 		qnext.release();
+    }
+};
+
+struct graph_csr_t
+{
+    typedef uint32_t    my_edge_id_t;
+    typedef uint32_t    my_vertex_id_t;
+
+    my_vertex_id_t*     endV;
+    my_edge_id_t*       rowsIndices;
+    vertex_id_t         n;
+    my_edge_id_t        m;
+
+    graph_csr_t() : endV( NULL ), rowsIndices( NULL ), n( 0 ), m( 0 )
+    {
+    }
+
+    void convert( const graph_t * const G, int node )
+    {
+        endV = (my_vertex_id_t*)numa_aligned_alloc( MEMALIGN, sizeof( my_vertex_id_t )*( G->m ), node );
+        rowsIndices = (my_edge_id_t*)numa_aligned_alloc( MEMALIGN, sizeof( my_edge_id_t )*( G->n + 1 ), node );
+
+        for( size_t i = 0; i != G->m; ++i )
+        {
+            endV[i] = G->endV[i];
+        }
+        for( size_t i = 0; i != G->n + 1; ++i )
+        {
+            rowsIndices[i] = G->rowsIndices[i];
+        }
+        n = G->n;
+        m = G->m;
+    }
+
+    void copy( const graph_csr_t * const G, int node )
+    {
+        endV = (my_vertex_id_t*)numa_aligned_alloc( MEMALIGN, sizeof( my_vertex_id_t )*( G->m ), node );
+        rowsIndices = (my_edge_id_t*)numa_aligned_alloc( MEMALIGN, sizeof( my_edge_id_t )*( G->n + 1 ), node );
+
+        for( size_t i = 0; i != G->m; ++i )
+        {
+            endV[i] = G->endV[i];
+        }
+        for( size_t i = 0; i != G->n + 1; ++i )
+        {
+            rowsIndices[i] = G->rowsIndices[i];
+        }
+
+        n = G->n;
+        m = G->m;
+    }
+
+    void release()
+    {
+        numa_aligned_free( endV );
+        numa_aligned_free( rowsIndices );
+        endV = NULL;
+        rowsIndices = NULL;
     }
 };
 
@@ -235,19 +310,19 @@ struct graph_coo_t
     {
         release();
     }
-    void resize( vertex_id_t size )
+    void resize( vertex_id_t size, int node )
     {
         release();
-        edges = (edge_t*)aligned_alloc( MEMALIGN, sizeof( edge_t )*size );
+        edges = (edge_t*)numa_aligned_alloc( MEMALIGN, sizeof( edge_t )*size, node );
     }
     void release()
     {
-        free( edges );
+        numa_aligned_free( edges );
         edges = NULL;
     }
-    void convert( const graph_t* G )
+    void convert( const graph_t* G, int node )
     {
-        resize( G->m );
+        resize( G->m, node );
         vertex_id_t n = 0;
         for( vertex_id_t v = 0; v != G->n; ++v )
         {
@@ -319,12 +394,12 @@ struct graph_coo_t
 };
 
 void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_id_t start, DIST_TYPE* distance, SCOUNT_TYPE* shortest_count, wavefront_t& queue );
-void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
+void bfs( const graph_csr_t* const G, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
           vertex_id_t* vertex_on_level_count,
           DIST_TYPE& max_distance );
-void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
+void betweenness_centrality( const graph_csr_t* const G, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
