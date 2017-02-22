@@ -242,16 +242,8 @@ void run_mpi( graph_t* g_local, double* result )
         DIST_TYPE           max_distance = 0;
 
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
-        bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, b.global_vertex_on_level_count, b.global_unmarked_vertex_count, max_distance );
+        bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
         betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
-
-        vertex_id_t unmarked = G->n;
-        for( size_t distance = 0; distance != max_distance; ++distance )
-        {
-            unmarked -= b.vertex_on_level_count[distance];
-            b.global_vertex_on_level_count[distance] += b.vertex_on_level_count[distance];
-            b.global_unmarked_vertex_count[distance] += unmarked;
-        }
     }
 
     std::vector<double> local_result;

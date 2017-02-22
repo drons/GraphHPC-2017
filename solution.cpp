@@ -53,8 +53,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
           vertex_id_t* vertex_on_level_count,
-          const double* global_vertex_on_level_count,
-          const double* global_unmarked_vertex_count, DIST_TYPE& max_distance )
+          DIST_TYPE& max_distance )
 {
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
     memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
@@ -65,6 +64,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
 
     size_t      n = G->n;
     size_t      num_verts_on_level = 1;
+    size_t      processed_vertites_count = 1;
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
 
@@ -104,14 +104,14 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         ++next_level;
         num_verts_on_level = qnext.size();
         vertex_on_level_count[current_level] = num_verts_on_level;
+        processed_vertites_count += num_verts_on_level;
         q.swap( qnext );
         qnext.reset();
     }while( num_verts_on_level > 0 && num_verts_on_level < 1024 );
 
     while( num_verts_on_level > 0 )
     {
-        if( global_vertex_on_level_count[current_level] <
-            global_unmarked_vertex_count[current_level] )
+        if( num_verts_on_level < n - processed_vertites_count )
         {//descending
             num_verts_on_level = 0;
 #ifdef UNROLL
@@ -217,6 +217,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         ++current_level;
         ++next_level;
         vertex_on_level_count[current_level] = num_verts_on_level;
+        processed_vertites_count += num_verts_on_level;
     }
     max_distance = current_level;
 }
@@ -529,16 +530,8 @@ void run( graph_t* G, double* result )
         DIST_TYPE           max_distance = 0;
 
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
-        bfs( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, b.global_vertex_on_level_count, b.global_unmarked_vertex_count, max_distance );
+        bfs( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
         betweenness_centrality( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
-
-        vertex_id_t unmarked = Gwork->n;
-        for( size_t distance = 0; distance != max_distance; ++distance )
-        {
-            unmarked -= b.vertex_on_level_count[distance];
-            b.global_vertex_on_level_count[distance] += b.vertex_on_level_count[distance];
-            b.global_unmarked_vertex_count[distance] += unmarked;
-        }
 
 #ifdef DEBUG
         if(1)

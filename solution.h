@@ -122,8 +122,6 @@ public:
     DIST_TYPE*      distance;
     SCOUNT_TYPE*    shortest_count;
     vertex_id_t*    vertex_on_level_count;
-    double*         global_vertex_on_level_count;
-    double*         global_unmarked_vertex_count;
     PARTIAL_TYPE*   partial_result;
     DELTA_TYPE*     delta;
     wavefront_t     q;
@@ -135,8 +133,6 @@ public:
         distance( NULL ),
         shortest_count( NULL ),
         vertex_on_level_count( NULL ),
-        global_vertex_on_level_count( NULL ),
-        global_unmarked_vertex_count( NULL ),
         partial_result( NULL ),
         delta( NULL )
     {
@@ -201,16 +197,12 @@ public:
         distance = (DIST_TYPE*)aligned_alloc( mem_align, sizeof( DIST_TYPE )*G->n );
         shortest_count = (SCOUNT_TYPE*)aligned_alloc( mem_align, sizeof( SCOUNT_TYPE )*G->n );
         vertex_on_level_count = (vertex_id_t*)aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance );
-        global_vertex_on_level_count = (double*)aligned_alloc( mem_align, sizeof( double )*max_distance );
-        global_unmarked_vertex_count = (double*)aligned_alloc( mem_align, sizeof( double )*max_distance );
         partial_result = (PARTIAL_TYPE*)aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n );
         delta = (DELTA_TYPE*)aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n );
 
         q.resize( G->n );
         qnext.resize( G->n );
 
-        std::fill( global_vertex_on_level_count, global_vertex_on_level_count + max_distance, 0 );
-        std::fill( global_unmarked_vertex_count, global_unmarked_vertex_count + max_distance, G->n );
         std::fill( partial_result, partial_result + G->n, 0 );
     }
 
@@ -219,8 +211,6 @@ public:
         free( distance );
         free( shortest_count );
         free( vertex_on_level_count );
-        free( global_vertex_on_level_count );
-        free( global_unmarked_vertex_count );
         free( partial_result );
         free( delta );
 
@@ -333,8 +323,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE* distance, SCOUNT_TYPE* shortest_count,
           wavefront_t& q, wavefront_t& qnext,
           vertex_id_t* vertex_on_level_count,
-          const double* global_vertex_on_level_count,
-          const double* global_unmarked_vertex_count, DIST_TYPE& max_distance );
+          DIST_TYPE& max_distance );
 void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
