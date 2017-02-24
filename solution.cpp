@@ -4,6 +4,7 @@
 #include <mmintrin.h>
 #include <emmintrin.h>
 #include <smmintrin.h>
+#include <iomanip>
 
 //#define DEBUG 1
 
@@ -47,7 +48,18 @@ void simplified_dijkstra( const graph_t* G, const uint32_t* row_indites, vertex_
     return;
 }
 
-#define UNROLL 16
+void dump128( const char * name, __m128i v )
+{
+    uint8_t b[ 16 ] __attribute__ ((aligned (16)));
+    _mm_store_si128((__m128i*)b, v );
+    std::cout << name << " = { ";
+    for( size_t i = 0; i != 16; ++i )
+    {
+        std::cout << std::setw(6) << (int)b[i] << "  ";
+    }
+    std::cout << "}" << std::endl;
+}
+//#define UNROLL 32
 //int vector_hit_count = 0;
 //int scalar_hit_count = 0;
 void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
@@ -56,10 +68,10 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           vertex_id_t* vertex_on_level_count,
           DIST_TYPE& max_distance )
 {
-    memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
+    memset( distance, 0xFF, DIST_LEN( G->n ) );
     memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
 
-    distance[ start ] = 0;
+    SET_DIST( distance, start, 0 );
     shortest_count[ start ] = 1;
     vertex_on_level_count[0] = 1;
 
@@ -69,11 +81,13 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
 
+
+
+/*
     q.reset();
     qnext.reset();
 
     q.push_back( start );
-
     if( MAX_QUEUE_LEN > num_verts_on_level )
     do
     {//unroll first iteration in classic mode
@@ -110,34 +124,46 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         q.swap( qnext );
         qnext.reset();
     }while( num_verts_on_level > 0 && num_verts_on_level < MAX_QUEUE_LEN );
-
+*/
     while( num_verts_on_level > 0 )
     {
         if( BFS_LEVEL_A*(num_verts_on_level) < BFS_LEVEL_B*(n - processed_vertites_count) )
         {//descending
             num_verts_on_level = 0;
 #ifdef UNROLL
-            __m128i current_level16( _mm_set1_epi8( current_level ) );
+            __m128i current_level_lo( _mm_set1_epi8( current_level ) );
+            __m128i current_level_hi( _mm_set1_epi8( (current_level << 4) ) );
+            __m128i mask_lo( _mm_set1_epi8( 0x0F ) );
+            __m128i mask_hi( _mm_set1_epi8( 0xF0 ) );
+
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
-                __m128i comp( _mm_cmpeq_epi8( current_level16, distance_v16 ) );    //compare
-                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + (vu>>1)) ) );//load from mem
+                __m128i d_lo( _mm_and_si128( distance_v16, mask_lo ) );
+                __m128i d_hi( _mm_and_si128( distance_v16, mask_hi ) );
+                __m128i comp_lo( _mm_cmpeq_epi8( current_level_lo, d_lo ) );    //compare low part
+                __m128i comp_hi( _mm_cmpeq_epi8( current_level_hi, d_hi ) );    //compare high part
+
+                if( _mm_testz_si128( comp_lo, comp_lo ) &&
+                    _mm_testz_si128( comp_hi, comp_hi ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
 
-                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
-                _mm_store_si128((__m128i*)b, comp );
+                uint8_t b_lo[ 16 ] __attribute__ ((aligned (16)));
+                uint8_t b_hi[ 16 ] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b_lo, comp_lo );
+                _mm_store_si128((__m128i*)b_hi, comp_hi );
+
                 for( size_t u = 0; u < UNROLL; ++u )
                 {
                     size_t v = vu + u;
-                    if( b[u] )
+                    if( (u&1)?b_hi[u>>1]:b_lo[u>>1] )
 #else
             {
                 for( size_t v = 0; v < n; ++v )
                 {
-                    if( distance[v] == current_level )
+                    if( GET_DIST( distance, v ) == current_level )
 #endif
                     {
                         const vertex_id_t* ibegin = G->endV + row_indites[ v ];
@@ -146,14 +172,15 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                         for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
                             size_t w( *e );
-                            if( distance[w] == INVALID_DISTANCE )
+                            DIST_TYPE   dist_w( GET_DIST( distance, w ) );
+                            if( dist_w == INVALID_DISTANCE )
                             {
-                                distance[w] = next_level;
+                                SET_DIST( distance, w, next_level );
                                 ++num_verts_on_level;
                                 shortest_count[w] = shortest_count[v];
                             }
                             else
-                            if( distance[w] == next_level )
+                            if( dist_w == next_level )
                             {
                                 shortest_count[w] += shortest_count[v];
                             }
@@ -166,27 +193,38 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         {//ascending
             num_verts_on_level = 0;
 #ifdef UNROLL
-            __m128i invalid_distance16( _mm_set1_epi8( INVALID_DISTANCE ) );
+            __m128i invalid_distance_lo( _mm_set1_epi8( 0x0F ) );
+            __m128i invalid_distance_hi( _mm_set1_epi8( 0xF0 ) );
+            __m128i mask_lo( _mm_set1_epi8( 0x0F ) );
+            __m128i mask_hi( _mm_set1_epi8( 0xF0 ) );
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
-                __m128i comp( _mm_cmpeq_epi8( invalid_distance16, distance_v16 ) );    //compare
-                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + (vu/2)) ) );//load from mem
+                __m128i d_lo( _mm_and_si128( distance_v16, mask_lo ) );
+                __m128i d_hi( _mm_and_si128( distance_v16, mask_hi ) );
+                __m128i comp_lo( _mm_cmpeq_epi8( invalid_distance_lo, d_lo ) );    //compare low part
+                __m128i comp_hi( _mm_cmpeq_epi8( invalid_distance_hi, d_hi ) );    //compare high part
+
+                if( _mm_testz_si128( comp_lo, comp_lo ) &&
+                    _mm_testz_si128( comp_hi, comp_hi ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
 
-                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
-                _mm_store_si128((__m128i*)b, comp );
+                uint8_t b_lo[ 16 ] __attribute__ ((aligned (16)));
+                uint8_t b_hi[ 16 ] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b_lo, comp_lo );
+                _mm_store_si128((__m128i*)b_hi, comp_hi );
+
                 for( size_t u = 0; u < UNROLL; ++u )
                 {
                     size_t v = vu + u;
-                    if( b[u] )
+                    if( (u&1)?b_hi[u>>1]:b_lo[u>>1] )
 #else
             {
                 for( size_t v = 0; v < n; ++v )
                 {
-                    if( distance[v] == INVALID_DISTANCE )
+                    if( GET_DIST( distance, v ) == INVALID_DISTANCE )
 #endif
                     {
                         const vertex_id_t* e = G->endV + row_indites[ v ];
@@ -195,9 +233,9 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                         for( ; e < iend; ++e )
                         {
                             size_t     w( *e );
-                            if( distance[w] == current_level )
+                            if( GET_DIST( distance, w ) == current_level )
                             {
-                                distance[v] = next_level;
+                                SET_DIST( distance, v, next_level );
                                 shortest_count[v] = shortest_count[w];
                                 ++num_verts_on_level;
                                 break;
@@ -207,7 +245,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                         for( ; e < iend; ++e )
                         {
                             size_t     w( *e );
-                            if( distance[w] == current_level )
+                            if( GET_DIST( distance, w ) == current_level )
                             {
                                 shortest_count[v] += shortest_count[w];
                             }
@@ -231,7 +269,6 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         max_distance = 0;
     }
 }
-
 
 void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_t s,
                              const DIST_TYPE* distance,
@@ -259,27 +296,38 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
             vertex_on_level_count[ max_distance ] )
         {
 #ifdef UNROLL
-            __m128i next_distance16( _mm_set1_epi8( next_distance ) );
+            __m128i next_distance_lo( _mm_set1_epi8( next_distance ) );
+            __m128i next_distance_hi( _mm_set1_epi8( (next_distance << 4) ) );
+            __m128i mask_lo( _mm_set1_epi8( 0x0F ) );
+            __m128i mask_hi( _mm_set1_epi8( 0xF0 ) );
             for( size_t wu = 0; wu < n; wu += UNROLL )
             {
-                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + wu) ) );//load from mem
-                __m128i comp( _mm_cmpeq_epi8( next_distance16, distance_v16 ) );    //compare
-                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + (wu/2)) ) );//load from mem
+                __m128i d_lo( _mm_and_si128( distance_v16, mask_lo ) );
+                __m128i d_hi( _mm_and_si128( distance_v16, mask_hi ) );
+                __m128i comp_lo( _mm_cmpeq_epi8( next_distance_lo, d_lo ) );    //compare low part
+                __m128i comp_hi( _mm_cmpeq_epi8( next_distance_hi, d_hi ) );    //compare high part
+
+                if( _mm_testz_si128( comp_lo, comp_lo ) &&
+                    _mm_testz_si128( comp_hi, comp_hi ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
 
-                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
-                _mm_store_si128((__m128i*)b, comp );
+                uint8_t b_lo[ 16 ] __attribute__ ((aligned (16)));
+                uint8_t b_hi[ 16 ] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b_lo, comp_lo );
+                _mm_store_si128((__m128i*)b_hi, comp_hi );
+
                 for( size_t u = 0; u < UNROLL; ++u )
                 {
                     size_t w = wu + u;
-                    if( b[u] )
+                    if( (u&1)?b_hi[u>>1]:b_lo[u>>1] )
 #else
             {
                 for( size_t w = 0; w < n; ++w )
                 {
-                    if( distance[w] == next_distance )
+                    if( GET_DIST( distance, w ) == next_distance )
 #endif
                     {
                         const vertex_id_t*  ibegin = G->endV + row_indites[ w ];
@@ -288,7 +336,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                         for( const vertex_id_t* e = ibegin; e != iend; ++e )
                         {
                             size_t v( *e );
-                            if( max_distance == distance[v] )
+                            if( max_distance == GET_DIST( distance, v ) )
                             {
                                 const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
                                 delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
@@ -301,27 +349,38 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         else
         {
 #ifdef UNROLL
-            __m128i max_distance16( _mm_set1_epi8( max_distance ) );
+            __m128i max_distance_lo( _mm_set1_epi8( max_distance ) );
+            __m128i max_distance_hi( _mm_set1_epi8( (max_distance << 4) ) );
+            __m128i mask_lo( _mm_set1_epi8( 0x0F ) );
+            __m128i mask_hi( _mm_set1_epi8( 0xF0 ) );
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
-                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
-                __m128i comp( _mm_cmpeq_epi8( max_distance16, distance_v16 ) );    //compare
-                if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
+                __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + (vu/2)) ) );//load from mem
+                __m128i d_lo( _mm_and_si128( distance_v16, mask_lo ) );
+                __m128i d_hi( _mm_and_si128( distance_v16, mask_hi ) );
+                __m128i comp_lo( _mm_cmpeq_epi8( max_distance_lo, d_lo ) );    //compare low part
+                __m128i comp_hi( _mm_cmpeq_epi8( max_distance_hi, d_hi ) );    //compare high part
+
+                if( _mm_testz_si128( comp_lo, comp_lo ) &&
+                    _mm_testz_si128( comp_hi, comp_hi ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
                 {
                     continue;
                 }
 
-                uint8_t b[UNROLL] __attribute__ ((aligned (16)));
-                _mm_store_si128((__m128i*)b, comp );
+                uint8_t b_lo[ 16 ] __attribute__ ((aligned (16)));
+                uint8_t b_hi[ 16 ] __attribute__ ((aligned (16)));
+                _mm_store_si128((__m128i*)b_lo, comp_lo );
+                _mm_store_si128((__m128i*)b_hi, comp_hi );
+
                 for( size_t u = 0; u < UNROLL; ++u )
                 {
                     size_t v = vu + u;
-                    if( b[u] )
+                    if( (u&1)?b_hi[u>>1]:b_lo[u>>1] )
 #else
             {
                 for( size_t v = 0; v < n; ++v )
                 {
-                    if( distance[v] == max_distance )
+                    if( GET_DIST( distance, v ) == max_distance )
 #endif
                     {
                         const vertex_id_t*  ibegin = G->endV + row_indites[ v ];
@@ -331,7 +390,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                         {
                             size_t w( *e );
 
-                            if( distance[w] == next_distance )
+                            if( GET_DIST( distance, w ) == next_distance )
                             {
                                 delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
                             }
@@ -473,8 +532,60 @@ std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
     return fmap;
 }
 
+void test_dist()
+{
+    const int len = 16;
+    for( DIST_TYPE v1 = 0; v1 != 16; ++v1 )
+    {
+        for( DIST_TYPE v2 = 0; v2 != 16; ++v2 )
+        {
+            DIST_TYPE   x[len/2];
+            memset( x, 0xFF, sizeof( x ) );
+
+//            std::cout << "v1 = " << (int)v1 << " v2 = " << (int)v2 << " x = { ";
+//            for( size_t i = 0; i != len; ++i )
+//            {
+//                std::cout << (int)GET_DIST( x, i ) << " ";
+//            }
+//            std::cout << "}" << std::endl;
+
+            for( size_t i = 0; i < len; ++i )
+            {
+                if( GET_DIST( x, i ) != 0xF )
+                {
+                    std::cout << "failed i = " << i << std::endl;
+                    exit(-1);
+                }
+            }
+            for( size_t i = 0; i < len; ++i )
+            {
+                DIST_TYPE v = (i&1)?v1:v2;
+                SET_DIST( x, i, v );
+            }
+            for( size_t i = 0; i < len; ++i )
+            {
+                int v = (i&1)?v1:v2;
+                if( GET_DIST( x, i ) != v )
+                {
+                    std::cout << "failed2 i = " << i << " v = " << v << std::endl;
+                    exit(-1);
+                }
+            }
+//            std::cout << "v1 = " << (int)v1 << " v2 = " << (int)v2 << " x = { ";
+//            for( size_t i = 0; i != len; ++i )
+//            {
+//                std::cout << (int)GET_DIST( x, i ) << " ";
+//            }
+//            std::cout << "}" << std::endl;
+        }
+    }
+}
 void run( graph_t* G, double* result )
 {
+    {
+        test_dist();
+//        return;
+    }
     size_t                          n = G->n;
     compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;

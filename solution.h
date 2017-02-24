@@ -8,12 +8,38 @@
 #include <parallel/algorithm>
 #include <omp.h>
 
-#define INVALID_DISTANCE 255
+#define INVALID_DISTANCE 0xF
 
 typedef uint8_t DIST_TYPE;
 typedef uint16_t SCOUNT_TYPE;
 typedef double DELTA_TYPE;
 typedef double PARTIAL_TYPE;
+
+#define DIST_TYPE_BITS 4
+#define DIST_LEN(n) (sizeof( DIST_TYPE )*n*DIST_TYPE_BITS/8)
+
+#define GET_HALF( d, n )    \
+    (( (n&1)==0 ) ? ( d[n>>1] & 0x0F ) : ((d[n>>1] >> 4)))
+
+#define GET_DIST( d, n ) GET_HALF( d, n )
+
+#define GET_DIST0( d, n2 )    \
+    ( d[n2] & 0x0F )
+
+#define GET_DIST1( d, n2 )    \
+    ( ( d[n2] >> 4 ) & 0x0F )
+
+#define SET_DIST( d, n, u)              \
+{                                       \
+    if( (n&1) == 0 )                    \
+    {                                   \
+        d[n>>1] &= (0xF0|u);            \
+    }                                   \
+    else                                \
+    {                                   \
+        d[n>>1] &= (0x0F|(u<<4));       \
+    }                                   \
+}
 
 #define MEMALIGN    32
 #ifndef __USE_ISOC11
@@ -145,13 +171,13 @@ public:
         std::cout << "d  = { ";
         for( size_t i = 0; i != size; ++i )
         {
-            if( distance[i] > max_distance + 1 )
+            if( GET_DIST( distance, i ) > (int)max_distance + 1 )
             {
                 std::cout << " " << " ";
             }
             else
             {
-                std::cout << (int)distance[i] << " ";
+                std::cout << (int)GET_DIST( distance, i ) << " ";
             }
         }
         std::cout << "} ";
@@ -173,9 +199,9 @@ public:
     {
         for( size_t i = 0; i != size; ++i )
         {
-            if( distance[i] != other.distance[i] )
+            if( GET_DIST( distance, i ) != GET_DIST( other.distance, i ) )
             {
-                std::cout << " distance[i] != other.distance[i] " << "i = " << i << " " << (int)distance[i] << " " << (int)other.distance[i] << std::endl;
+                std::cout << " distance[i] != other.distance[i] " << "i = " << i << " " << (int)GET_DIST( distance, i ) << " " << (int)GET_DIST( other.distance, i ) << std::endl;
                 return false;
             }
         }
@@ -194,7 +220,7 @@ public:
     {
         max_distance = std::min( (vertex_id_t)std::numeric_limits<DIST_TYPE>::max(), G->n );
         size = G->n;
-        distance = (DIST_TYPE*)aligned_alloc( mem_align, sizeof( DIST_TYPE )*G->n );
+        distance = (DIST_TYPE*)aligned_alloc( mem_align, DIST_LEN( G->n ) );
         shortest_count = (SCOUNT_TYPE*)aligned_alloc( mem_align, sizeof( SCOUNT_TYPE )*G->n );
         vertex_on_level_count = (vertex_id_t*)aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance );
         partial_result = (PARTIAL_TYPE*)aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n );
