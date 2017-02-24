@@ -1,4 +1,5 @@
 #include "solution.h"
+#include "balance.h"
 
 #include <mmintrin.h>
 #include <emmintrin.h>
@@ -73,6 +74,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
 
     q.push_back( start );
 
+    if( MAX_QUEUE_LEN > num_verts_on_level )
     do
     {//unroll first iteration in classic mode
         num_verts_on_level = 0;
@@ -107,11 +109,11 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         processed_vertites_count += num_verts_on_level;
         q.swap( qnext );
         qnext.reset();
-    }while( num_verts_on_level > 0 && num_verts_on_level < 1024 );
+    }while( num_verts_on_level > 0 && num_verts_on_level < MAX_QUEUE_LEN );
 
     while( num_verts_on_level > 0 )
     {
-        if( num_verts_on_level < n - processed_vertites_count )
+        if( BFS_LEVEL_A*(num_verts_on_level) < BFS_LEVEL_B*(n - processed_vertites_count) )
         {//descending
             num_verts_on_level = 0;
 #ifdef UNROLL
@@ -220,7 +222,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
         processed_vertites_count += num_verts_on_level;
     }
 
-    if( current_level > 0 )
+    if( current_level != 0 )
     {
         max_distance = current_level - 1;
     }
@@ -377,7 +379,7 @@ struct sorter_d
     }
 };
 
-std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, int order )
+std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
 {
     std::vector< vertex_id_t>   fmap;
     std::vector< vertex_id_t>   imap;
@@ -388,56 +390,22 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
     for( size_t n = 0; n != G->n; ++n )
         fmap[n] = n;
 
-
-    graph_t*    Gwork;
-    if( G == Gnew )
+    if( order == 0 )
     {
-        if( order == 0 )
-        {
-            return fmap;
-        }
-        Gwork = new graph_t;
-        Gwork->n = G->n;
-        Gwork->m = G->m;
-        Gwork->local_m = G->local_m;
-        Gwork->local_n = G->local_n;
-        Gwork->nproc = G->nproc;
-        Gwork->rank = G->rank;
-        Gwork->rowsIndices = new edge_id_t[ Gwork->n + 1 ];
-        Gwork->endV = new vertex_id_t[ Gwork->m ];
-    }
-    else
-    {
-        Gwork = Gnew;
-        Gwork->n = G->n;
-        Gwork->m = G->m;
-        Gwork->local_m = G->local_m;
-        Gwork->local_n = G->local_n;
-        Gwork->nproc = G->nproc;
-        Gwork->rank = G->rank;
-        Gwork->rowsIndices = new edge_id_t[ Gwork->n + 1 ];
-        Gwork->endV = new vertex_id_t[ Gwork->m ];
-
-        if( order == 0 )
-        {
-            memcpy( Gwork->rowsIndices, G->rowsIndices, sizeof(edge_id_t)*(Gwork->n + 1) );
-            memcpy( Gwork->endV, G->endV, sizeof(vertex_id_t)*(Gwork->m) );
-            return fmap;
-        }
+        return fmap;
     }
 
     if( order > 0 )
     {
-        std::sort( fmap.begin(), fmap.end(), sorter_a( Gwork ) );
+        std::sort( fmap.begin(), fmap.end(), sorter_a( G ) );
     }
     else
-    if( order < 0 )
     {
-        std::sort( fmap.begin(), fmap.end(), sorter_d( Gwork ) );
+        std::sort( fmap.begin(), fmap.end(), sorter_d( G ) );
     }
 
     #pragma omp parallel for
-    for( size_t i = 0; i < Gwork->n; ++i )
+    for( size_t i = 0; i < G->n; ++i )
     {
         vertex_id_t v = fmap[i];
         imap[v] = i;
@@ -458,49 +426,48 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
     }
     std::cout << "}" << std::endl;
 */
+    edge_id_t*      new_rows_indices = new edge_id_t[ G->n + 1 ];
+    vertex_id_t*    new_end_v = new vertex_id_t[ G->m ];
+
     edge_id_t   off = 0;
-    for( vertex_id_t i = 0; i != Gwork->n; ++i )
+    for( vertex_id_t i = 0; i != G->n; ++i )
     {
         vertex_id_t     v( fmap[i] );
         vertex_id_t*    ibegin = G->endV + G->rowsIndices[ v ];
         vertex_id_t*    iend = G->endV + G->rowsIndices[ v + 1 ];
         vertex_id_t     sz( iend - ibegin );
 
-        memcpy( Gwork->endV + off, ibegin, sizeof( vertex_id_t )*sz );
-        Gwork->rowsIndices[i] = off;
+        memcpy( new_end_v + off, ibegin, sizeof( vertex_id_t )*sz );
+        new_rows_indices[i] = off;
         off += sz;
     }
-    Gwork->rowsIndices[Gwork->n] = off;
+    new_rows_indices[G->n] = off;
 
     #pragma omp parallel for
-    for( vertex_id_t e = 0; e < Gwork->m; ++e )
+    for( vertex_id_t e = 0; e < G->m; ++e )
     {
-        Gwork->endV[e] = imap[ Gwork->endV[e] ];
+        new_end_v[e] = imap[ new_end_v[e] ];
     }
 
+    delete [] G->endV;
+    delete [] G->rowsIndices;
+
+    G->endV = new_end_v;
+    G->rowsIndices = new_rows_indices;
 
     #pragma omp parallel for schedule ( dynamic )
-    for( vertex_id_t v = 0; v < Gwork->n; ++v )
+    for( vertex_id_t v = 0; v < G->n; ++v )
     {
-        vertex_id_t* ibegin = Gwork->endV + Gwork->rowsIndices[ v ];
-        vertex_id_t* iend = Gwork->endV + Gwork->rowsIndices[ v + 1 ];
+        vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+        vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
         if( order > 0 )
         {
-            std::sort( ibegin, iend, sorter_a( Gwork ) );
+            std::sort( ibegin, iend, sorter_a( G ) );
         }
         else
-        if( order < 0 )
         {
-            std::sort( ibegin, iend, sorter_d( Gwork ) );
+            std::sort( ibegin, iend, sorter_d( G ) );
         }
-    }
-
-    if( G == Gwork )
-    {
-        memcpy( Gnew->rowsIndices, Gwork->rowsIndices, sizeof( edge_id_t )*Gnew->m );
-        memcpy( Gnew->endV, Gwork->endV, sizeof( vertex_id_t )*( Gnew->m + 1 ) );
-        freeGraph( Gwork );
-        delete Gwork;
     }
 
     return fmap;
@@ -508,18 +475,16 @@ std::vector< vertex_id_t> sort_graph( const graph_t * const G,  graph_t* Gnew, i
 
 void run( graph_t* G, double* result )
 {
-    graph_t                         storG;
-    graph_t*                        Gwork = &storG;
+    size_t                          n = G->n;
     compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, Gwork, -1 ) );
-    size_t                          n = Gwork->n;
+    std::vector< vertex_id_t>       map( sort_graph( G, -1 ) );
 
-    rows_indices32.resize( Gwork->n + 1 );
-    for( size_t n = 0; n < Gwork->n + 1; ++n )
+    rows_indices32.resize( G->n + 1 );
+    for( size_t n = 0; n < G->n + 1; ++n )
     {
-        rows_indices32[n] = Gwork->rowsIndices[n];
+        rows_indices32[n] = G->rowsIndices[n];
     }
 
     buffers = new compute_buffer_t[max_work_threads];
@@ -528,7 +493,7 @@ void run( graph_t* G, double* result )
     for( size_t t = 0; t < max_work_threads; ++t )
     {
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
-        b.resize( Gwork );
+        b.resize( G );
     }
 
 //    std::cout << "omp_get_num_procs   " << omp_get_num_procs() << std::endl;
@@ -547,8 +512,8 @@ void run( graph_t* G, double* result )
         DIST_TYPE           max_distance = 0;
 
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
-        bfs( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
-        betweenness_centrality( Gwork, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
+        bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
+        betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
 
 #ifdef DEBUG
         if(1)
@@ -590,5 +555,4 @@ void run( graph_t* G, double* result )
         b.release();
     }
     delete [] buffers;
-    freeGraph( Gwork );
 }
