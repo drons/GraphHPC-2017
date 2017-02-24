@@ -118,6 +118,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
             num_verts_on_level = 0;
 #ifdef UNROLL
             __m128i current_level16( _mm_set1_epi8( current_level ) );
+            #pragma omp parallel for schedule( dynamic ) reduction( +:num_verts_on_level )
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
                 __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
@@ -150,11 +151,13 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
                             {
                                 distance[w] = next_level;
                                 ++num_verts_on_level;
-                                shortest_count[w] = shortest_count[v];
+                                #pragma omp atomic
+                                shortest_count[w] += shortest_count[v];
                             }
                             else
                             if( distance[w] == next_level )
                             {
+                                #pragma omp atomic
                                 shortest_count[w] += shortest_count[v];
                             }
                         }
@@ -167,6 +170,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
             num_verts_on_level = 0;
 #ifdef UNROLL
             __m128i invalid_distance16( _mm_set1_epi8( INVALID_DISTANCE ) );
+            #pragma omp parallel for schedule( dynamic ) reduction( +:num_verts_on_level )
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
                 __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
@@ -260,6 +264,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         {
 #ifdef UNROLL
             __m128i next_distance16( _mm_set1_epi8( next_distance ) );
+            #pragma omp parallel for schedule( dynamic )
             for( size_t wu = 0; wu < n; wu += UNROLL )
             {
                 __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + wu) ) );//load from mem
@@ -291,7 +296,9 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                             if( max_distance == distance[v] )
                             {
                                 const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
-                                delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
+                                const DELTA_TYPE d( sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]) );
+                                #pragma omp atomic
+                                delta[v] += d;
                             }
                         }
                     }
@@ -302,6 +309,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         {
 #ifdef UNROLL
             __m128i max_distance16( _mm_set1_epi8( max_distance ) );
+            #pragma omp parallel for schedule( dynamic )
             for( size_t vu = 0; vu < n; vu += UNROLL )
             {
                 __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
@@ -502,15 +510,18 @@ void run( graph_t* G, double* result )
 //    std::cout << "omp_get_num_teams   " << omp_get_num_teams() << std::endl;
 //    std::cout << "omp_get_team_num    " << omp_get_team_num() << std::endl;
 
+    omp_set_nested( 1 );
+    int team_count = 56/4;
 #ifdef MAXNODES
     n = MAXNODES;
 #endif
-    #pragma omp parallel for schedule ( dynamic )
+    #pragma omp parallel for schedule ( dynamic ) num_threads( team_count )
     for( vertex_id_t s = 0; s < n; ++s )
     {
+//        std::cout << "omp_get_thread_num() = " << omp_get_thread_num() << std::endl;
         compute_buffer_t&   b( buffers[ omp_get_thread_num() ] );
         DIST_TYPE           max_distance = 0;
-
+        omp_set_num_threads(max_work_threads/team_count);
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
         bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
         betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
