@@ -255,8 +255,8 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
         assert( vertex_on_level_count[ next_distance ] ==
                 std::count( distance, distance + n, next_distance ) );
 #endif //DEBUG
-        if( vertex_on_level_count[ next_distance ] <
-            vertex_on_level_count[ max_distance ] )
+        if( BC_LEVEL_A*vertex_on_level_count[ next_distance ] <
+            BC_LEVEL_B*vertex_on_level_count[ max_distance ] )
         {
 #ifdef UNROLL
             __m128i next_distance16( _mm_set1_epi8( next_distance ) );
@@ -379,6 +379,95 @@ struct sorter_d
     }
 };
 
+//Cuthill McKee ordering
+std::vector< vertex_id_t> cm( const graph_t * const G )
+{
+    std::vector<vertex_id_t>    qbest;
+    vertex_id_t                 start = G->n/2;
+    size_t                      max_level = 0;
+
+    for( ;; )
+    {
+        std::vector<DIST_TYPE>      visited;
+        std::vector<vertex_id_t>    q;
+        size_t                      qbegin = 0;
+        size_t                      qend = 1;
+        size_t                      qprevend = 0;
+        size_t                      level = 0;
+
+        visited.resize( G->n );
+        q.resize( G->n );
+
+        std::fill( visited.begin(), visited.end(), 0 );
+        std::fill( q.begin(), q.end(), std::numeric_limits<vertex_id_t>::max() );
+
+        visited[ start ] = 1;
+        q[0] = start;
+
+        for(;;)
+        {
+            size_t qnext = qend;
+            for( size_t i = qbegin; i < qend; ++i )
+            {
+                size_t       v = q[i];
+                vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+                vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+
+                std::sort( ibegin, iend, sorter_a( G ) );
+                for( vertex_id_t* e = ibegin; e != iend; ++e )
+                {
+                    size_t w( *e );
+                    if( visited[w] == 0 )
+                    {
+                        visited[w] = 1;
+                        q[qnext] = w;
+                        ++qnext;
+                    }
+                }
+            }
+            if( qnext == qend )
+            {
+                break;
+            }
+            qprevend = qend;
+            qbegin = qend;
+            qend = qnext;
+            ++level;
+        }
+        std::cout << std::endl;
+        std::cout << "start = " << start << std::endl;
+        std::cout << "level = " << level << std::endl;
+        std::cout << "qprevend = " << qprevend << "qend = " << qend << std::endl;
+        start = *std::min_element( q.begin() + qprevend, q.begin() + qend, sorter_a( G ) );
+        std::cout << start << std::endl;
+
+        for( size_t v = 0; v < G->n; ++v )
+        {
+            if( visited[v] == 0 )
+            {
+                q[qend] = v;
+                ++qend;
+            }
+        }
+        qbest = q;
+        if( max_level != 0 &&
+            max_level <= level )
+        {
+            break;
+        }
+        max_level = level;
+    }
+
+//    for( size_t n = 0; n != G->n; ++n )
+//    {
+//        assert( std::count( qbest.begin(), qbest.end(), n ) == 1 );
+//    }
+//    assert( *std::max_element( qbest.begin(), qbest.end() ) == (G->n - 1) );
+
+    std::reverse( qbest.begin(), qbest.end() );
+    return qbest;
+}
+
 std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
 {
     std::vector< vertex_id_t>   fmap;
@@ -387,19 +476,24 @@ std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
     fmap.resize( G->n );
     imap.resize( G->n );
 
-    for( size_t n = 0; n != G->n; ++n )
-        fmap[n] = n;
 
     if( order == 0 )
     {
-        return fmap;
+        fmap = cm( G );
     }
+    else
+    {
+        for( size_t n = 0; n != G->n; ++n )
+            fmap[n] = n;
+    }
+
 
     if( order > 0 )
     {
         std::sort( fmap.begin(), fmap.end(), sorter_a( G ) );
     }
     else
+    if( order < 0 )
     {
         std::sort( fmap.begin(), fmap.end(), sorter_d( G ) );
     }
@@ -455,18 +549,22 @@ std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
     G->endV = new_end_v;
     G->rowsIndices = new_rows_indices;
 
-    #pragma omp parallel for schedule ( dynamic )
-    for( vertex_id_t v = 0; v < G->n; ++v )
+    if( order != 0 )
     {
-        vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
-        vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
-        if( order > 0 )
+        #pragma omp parallel for schedule ( dynamic )
+        for( vertex_id_t v = 0; v < G->n; ++v )
         {
-            std::sort( ibegin, iend, sorter_a( G ) );
-        }
-        else
-        {
-            std::sort( ibegin, iend, sorter_d( G ) );
+            vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+            vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+            if( order > 0 )
+            {
+                std::sort( ibegin, iend, sorter_a( G ) );
+            }
+            else
+            if( order < 0 )
+            {
+                std::sort( ibegin, iend, sorter_d( G ) );
+            }
         }
     }
 
@@ -479,7 +577,7 @@ void run( graph_t* G, double* result )
     compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, -1 ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, 0 ) );
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
