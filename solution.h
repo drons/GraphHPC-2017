@@ -124,6 +124,7 @@ public:
     vertex_id_t*    vertex_on_level_count;
     PARTIAL_TYPE*   partial_result;
     DELTA_TYPE*     delta;
+    DELTA_TYPE*     delta_precompute;
     wavefront_t     q;
     wavefront_t     qnext;
 
@@ -134,7 +135,8 @@ public:
         shortest_count( NULL ),
         vertex_on_level_count( NULL ),
         partial_result( NULL ),
-        delta( NULL )
+        delta( NULL ),
+        delta_precompute( NULL )
     {
     }
 
@@ -199,6 +201,7 @@ public:
         vertex_on_level_count = (vertex_id_t*)aligned_alloc( mem_align, sizeof( vertex_id_t )*max_distance );
         partial_result = (PARTIAL_TYPE*)aligned_alloc( mem_align, sizeof( PARTIAL_TYPE )*G->n );
         delta = (DELTA_TYPE*)aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n );
+        delta_precompute = (DELTA_TYPE*)aligned_alloc( mem_align, sizeof( DELTA_TYPE )*G->n );
 
         q.resize( G->n );
         qnext.resize( G->n );
@@ -213,6 +216,7 @@ public:
         free( vertex_on_level_count );
         free( partial_result );
         free( delta );
+        free( delta_precompute );
 
 		q.release();
 		qnext.release();
@@ -328,7 +332,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
-                             DELTA_TYPE* delta,
+                             DELTA_TYPE* delta, DELTA_TYPE* delta_precompute,
                              PARTIAL_TYPE* result );
 
 void bfs( const graph_t* G, const graph_coo_t* C, vertex_id_t start,

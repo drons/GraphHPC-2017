@@ -57,7 +57,7 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
           DIST_TYPE& max_distance )
 {
     memset( distance, INVALID_DISTANCE, sizeof(DIST_TYPE)*G->n );
-    memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
+//    memset( shortest_count, 0, sizeof(SCOUNT_TYPE)*G->n );
 
     distance[ start ] = 0;
     shortest_count[ start ] = 1;
@@ -69,47 +69,48 @@ void bfs( const graph_t* G, const uint32_t* row_indites, vertex_id_t start,
     DIST_TYPE   current_level = 0;
     DIST_TYPE   next_level = 1;
 
-    q.reset();
-    qnext.reset();
-
-    q.push_back( start );
-
     if( MAX_QUEUE_LEN > num_verts_on_level )
-    do
-    {//unroll first iteration in classic mode
-        num_verts_on_level = 0;
-        const vertex_id_t* rend( q.rend() );
-        for( const vertex_id_t* ii = q.rbegin(); ii != rend; --ii )
-        {
-            size_t  v = *ii;
-            vertex_id_t* ibegin = G->endV + row_indites[ v ];
-            vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+    {
+        q.reset();
+        qnext.reset();
+        q.push_back( start );
 
-            for( vertex_id_t* e = ibegin; e != iend; ++e )
+        do
+        {//unroll first iteration in classic mode
+            num_verts_on_level = 0;
+            const vertex_id_t* rend( q.rend() );
+            for( const vertex_id_t* ii = q.rbegin(); ii != rend; --ii )
             {
-                size_t w( *e );
-                DIST_TYPE&  distance_w(distance[w]);
-                if( distance_w == INVALID_DISTANCE )
+                size_t  v = *ii;
+                vertex_id_t* ibegin = G->endV + row_indites[ v ];
+                vertex_id_t* iend = G->endV + row_indites[ v + 1 ];
+
+                for( vertex_id_t* e = ibegin; e != iend; ++e )
                 {
-                    distance_w = next_level;
-                    shortest_count[w] = shortest_count[v];
-                    qnext.push_back( w );
-                }
-                else
-                if( distance_w == next_level )
-                {
-                    shortest_count[w] += shortest_count[v];
+                    size_t w( *e );
+                    DIST_TYPE&  distance_w(distance[w]);
+                    if( distance_w == INVALID_DISTANCE )
+                    {
+                        distance_w = next_level;
+                        shortest_count[w] = shortest_count[v];
+                        qnext.push_back( w );
+                    }
+                    else
+                    if( distance_w == next_level )
+                    {
+                        shortest_count[w] += shortest_count[v];
+                    }
                 }
             }
-        }
-        ++current_level;
-        ++next_level;
-        num_verts_on_level = qnext.size();
-        vertex_on_level_count[current_level] = num_verts_on_level;
-        processed_vertites_count += num_verts_on_level;
-        q.swap( qnext );
-        qnext.reset();
-    }while( num_verts_on_level > 0 && num_verts_on_level < MAX_QUEUE_LEN );
+            ++current_level;
+            ++next_level;
+            num_verts_on_level = qnext.size();
+            vertex_on_level_count[current_level] = num_verts_on_level;
+            processed_vertites_count += num_verts_on_level;
+            q.swap( qnext );
+            qnext.reset();
+        }while( num_verts_on_level > 0 && num_verts_on_level < MAX_QUEUE_LEN );
+    }
 
     while( num_verts_on_level > 0 )
     {
@@ -237,7 +238,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                              const DIST_TYPE* distance,
                              const SCOUNT_TYPE* shortest_count,
                              vertex_id_t* vertex_on_level_count, DIST_TYPE max_distance,
-                             DELTA_TYPE* delta,
+                             DELTA_TYPE* delta, DELTA_TYPE* delta_precompute,
                              PARTIAL_TYPE* result )
 {
     if( max_distance <= 1 )
@@ -249,6 +250,52 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
     --max_distance;
     for(;;)
     {
+#ifdef UNROLL
+        __m128i next_distance16( _mm_set1_epi8( next_distance ) );
+        for( size_t vu = 0; vu < n; vu += UNROLL )
+        {
+            __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + vu) ) );//load from mem
+            __m128i comp( _mm_cmpeq_epi8( next_distance16, distance_v16 ) );    //compare
+            if( _mm_testz_si128( comp, comp ) )// ( (!_mm_testz_si128(a,a))  == horizontal OR )
+            {
+                continue;
+            }
+#define UNROLL_COMPARE_ADD( u )                 \
+            if( _mm_extract_epi8( comp, u ) )   \
+            {                                   \
+                delta_precompute[vu + u] = (1.0 + ((PARTIAL_TYPE)delta[vu + u]))/   \
+                                            ((PARTIAL_TYPE)shortest_count[vu + u]); \
+            }                                   \
+
+            UNROLL_COMPARE_ADD( 0 )
+            UNROLL_COMPARE_ADD( 1 )
+            UNROLL_COMPARE_ADD( 2 )
+            UNROLL_COMPARE_ADD( 3 )
+            UNROLL_COMPARE_ADD( 4 )
+            UNROLL_COMPARE_ADD( 5 )
+            UNROLL_COMPARE_ADD( 6 )
+            UNROLL_COMPARE_ADD( 7 )
+            UNROLL_COMPARE_ADD( 8 )
+            UNROLL_COMPARE_ADD( 9 )
+            UNROLL_COMPARE_ADD( 10)
+            UNROLL_COMPARE_ADD( 11)
+            UNROLL_COMPARE_ADD( 12)
+            UNROLL_COMPARE_ADD( 13)
+            UNROLL_COMPARE_ADD( 14)
+            UNROLL_COMPARE_ADD( 15)
+#undef UNROLL_COMPARE_ADD
+        }
+#else //UNROLL
+        for( size_t v = 0; v != n; ++v )
+        {
+            if( distance[v] = next_distance )
+            {
+                delta_precompute[v] = (1.0 + ((PARTIAL_TYPE)delta[v]))/
+                                        ((PARTIAL_TYPE)shortest_count[v]);
+            }
+        }
+#endif
+
 #ifdef DEBUG
         assert( vertex_on_level_count[ max_distance ] ==
                 std::count( distance, distance + n, max_distance ) );
@@ -259,7 +306,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
             BC_LEVEL_B*vertex_on_level_count[ max_distance ] )
         {
 #ifdef UNROLL
-            __m128i next_distance16( _mm_set1_epi8( next_distance ) );
+
             for( size_t wu = 0; wu < n; wu += UNROLL )
             {
                 __m128i distance_v16( _mm_load_si128( (__m128i*)(distance + wu) ) );//load from mem
@@ -291,7 +338,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
                             if( max_distance == distance[v] )
                             {
                                 const PARTIAL_TYPE sc_v( ((PARTIAL_TYPE)shortest_count[v]) );
-                                delta[v] += sc_v*(1 + ((PARTIAL_TYPE)delta[w]))/((PARTIAL_TYPE)shortest_count[w]);
+                                delta[v] += sc_v*delta_precompute[w];
                             }
                         }
                     }
@@ -333,7 +380,7 @@ void betweenness_centrality( graph_t* G, const uint32_t* row_indites, vertex_id_
 
                             if( distance[w] == next_distance )
                             {
-                                delta[v] += ((PARTIAL_TYPE)shortest_count[v])*(1 + ((PARTIAL_TYPE)delta[w]))/(PARTIAL_TYPE)shortest_count[w];
+                                delta[v] += ((PARTIAL_TYPE)shortest_count[v])*delta_precompute[w];
                             }
                         }
                     }
@@ -611,7 +658,7 @@ void run( graph_t* G, double* result )
 
         std::fill( b.vertex_on_level_count, b.vertex_on_level_count + b.max_distance, 0 );
         bfs( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.q, b.qnext, b.vertex_on_level_count, max_distance );
-        betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.partial_result );
+        betweenness_centrality( G, rows_indices32.data(), s, b.distance, b.shortest_count, b.vertex_on_level_count, max_distance, b.delta, b.delta_precompute, b.partial_result );
 
 #ifdef DEBUG
         if(1)
