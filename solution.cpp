@@ -427,11 +427,19 @@ struct sorter_d
 };
 
 //Cuthill McKee ordering
-std::vector< vertex_id_t> cm( const graph_t * const G )
+std::vector< vertex_id_t> cm( graph_t* G )
 {
     std::vector<vertex_id_t>    qbest;
     vertex_id_t                 start = G->n/2;
     size_t                      max_level = 0;
+
+    #pragma omp parallel for schedule ( dynamic )
+    for( vertex_id_t v = 0; v < G->n; ++v )
+    {
+        vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
+        vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
+        std::sort( ibegin, iend, sorter_a( G ) );
+    }
 
     for( ;; )
     {
@@ -460,7 +468,7 @@ std::vector< vertex_id_t> cm( const graph_t * const G )
                 vertex_id_t* ibegin = G->endV + G->rowsIndices[ v ];
                 vertex_id_t* iend = G->endV + G->rowsIndices[ v + 1 ];
 
-                std::sort( ibegin, iend, sorter_a( G ) );
+
                 for( vertex_id_t* e = ibegin; e != iend; ++e )
                 {
                     size_t w( *e );
@@ -537,12 +545,12 @@ std::vector< vertex_id_t> sort_graph( graph_t* G, int order )
 
     if( order > 0 )
     {
-        std::sort( fmap.begin(), fmap.end(), sorter_a( G ) );
+        __gnu_parallel::sort( fmap.begin(), fmap.end(), sorter_a( G ) );
     }
     else
     if( order < 0 )
     {
-        std::sort( fmap.begin(), fmap.end(), sorter_d( G ) );
+        __gnu_parallel::sort( fmap.begin(), fmap.end(), sorter_d( G ) );
     }
 
     #pragma omp parallel for
@@ -624,9 +632,11 @@ void run( graph_t* G, double* result )
     compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     size_t                          max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, 0 ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, GSORT_ORDER ) );
 
     rows_indices32.resize( G->n + 1 );
+
+    #pragma omp parallel for
     for( size_t n = 0; n < G->n + 1; ++n )
     {
         rows_indices32[n] = G->rowsIndices[n];
