@@ -1,4 +1,5 @@
 #include "solution.h"
+#include "balance.h"
 
 vertex_id_t get_local_vert_count( vertex_id_t TotVertices, unsigned size, unsigned rank )
 {
@@ -102,7 +103,7 @@ void run_mpi( graph_t* g_local, double* result )
     compute_buffer_t*               buffers;
     std::vector<uint32_t>           rows_indices32;
     int                             max_work_threads = omp_get_max_threads();
-    std::vector< vertex_id_t>       map( sort_graph( G, G, 0 ) );
+    std::vector< vertex_id_t>       map( sort_graph( G, GSORT_ORDER ) );
 
     rows_indices32.resize( G->n + 1 );
     for( size_t n = 0; n < G->n + 1; ++n )
