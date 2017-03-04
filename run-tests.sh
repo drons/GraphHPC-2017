@@ -1,6 +1,6 @@
 #!/bin/sh
 
-for GS in 4 5 6 7 8 9 10; do
+for GS in 4 5 6 7 8 9 10 11 12; do
 	./gen_RMAT -s $GS &&
 	./solution -nIters 1 -in rmat-$GS &&
 	./gen_valid_info -in rmat-$GS &&
