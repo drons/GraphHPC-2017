@@ -1,3 +1,4 @@
+.travis.yml
 defs.h
 gen_RMAT.cpp
 graph_tools.cpp
@@ -17,6 +18,7 @@ start-single.sh
 start-cluster.sh
 run-single.sh
 run-cluster.sh
+run-tests.sh
 contest-analize.sh
 Makefile
 Makefile.prof-gen

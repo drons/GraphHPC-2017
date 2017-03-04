@@ -1,0 +1,19 @@
+sudo: required
+dist: trusty
+
+language:
+  - cpp
+
+addons:
+  apt:
+    packages:
+    - g++
+
+before_script:
+  - gcc --version
+
+script:
+  - make -f Makefile.gcc all
+  - ./run-tests.sh
+
+
